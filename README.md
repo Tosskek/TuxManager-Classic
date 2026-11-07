@@ -6,6 +6,12 @@ A Linux Task Manager alternative built with Qt6, inspired by the Windows Task Ma
 > with a flat, classic Task Manager look. All credit for the original program goes to Petr Bena;
 > this fork only changes the appearance and a few defaults. Licensed under GPL-3.0 like the original.
 
+| CPU (light) | GPU (light) |
+| --- | --- |
+| <img src="screenshots/classic/cpu-light.png" alt="CPU page, light mode" width="420"> | <img src="screenshots/classic/gpu-light.png" alt="GPU page, light mode" width="420"> |
+| **CPU (dark)** | **GPU (dark)** |
+| <img src="screenshots/classic/cpu-dark.png" alt="CPU page, dark mode" width="420"> | <img src="screenshots/classic/gpu-dark.png" alt="GPU page, dark mode" width="420"> |
+
 ## What this fork changes
 
 **Look and feel**
