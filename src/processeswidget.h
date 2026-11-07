@@ -67,6 +67,7 @@ class ProcessesWidget : public QWidget
         void updateStatusBar();
 
     private:
+        bool m_treeDefaultExpansionDone { false };
         Ui::ProcessesWidget      *ui;
         OS::ProcessModel         *m_model;
         OS::ProcessTreeModel     *m_treeModel;

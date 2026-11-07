@@ -34,20 +34,22 @@ using namespace Perf;
 SwapDetailWidget::SwapDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::SwapDetailWidget)
 {
     this->ui->setupUi(this);
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->inUseValueLabel, this->ui->freeValueLabel });
+    UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->usageGraphArea, 3000), QPair<QWidget *, int>(this->ui->activityGraphWidget, 2000) }, 1);
 
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->SwapUsageGraphLineColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MutedTextColor, 11);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 13);
 
-    WidgetStyle::ApplyTextStyle(this->ui->usageLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageValueLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageTimeLeftLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageTimeRightLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->usageLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageValueLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageTimeLeftLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageTimeRightLabel, scheme->StatLabelColor, 9);
 
-    WidgetStyle::ApplyTextStyle(this->ui->activityLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityTimeLeftLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityTimeRightLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->activityLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityTimeLeftLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityTimeRightLabel, scheme->StatLabelColor, 9);
 
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
@@ -126,18 +128,18 @@ void SwapDetailWidget::Init()
 void SwapDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->SwapUsageGraphLineColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MutedTextColor, 11);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 13);
 
-    WidgetStyle::ApplyTextStyle(this->ui->usageLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageValueLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageTimeLeftLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->usageTimeRightLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->usageLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageValueLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageTimeLeftLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->usageTimeRightLabel, scheme->StatLabelColor, 9);
 
-    WidgetStyle::ApplyTextStyle(this->ui->activityLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityTimeLeftLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activityTimeRightLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->activityLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityTimeLeftLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activityTimeRightLabel, scheme->StatLabelColor, 9);
 
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))

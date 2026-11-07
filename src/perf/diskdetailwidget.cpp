@@ -33,18 +33,26 @@ using namespace Perf;
 DiskDetailWidget::DiskDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::DiskDetailWidget)
 {
     this->ui->setupUi(this);
+    {
+        // Content sits ~20 screen pixels lower (12 px at the default UI scale).
+        QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setTop(m.top() + 12);
+        this->ui->verticalLayout->setContentsMargins(m);
+    }
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->activeValueLabel, this->ui->readValueLabel, this->ui->writeValueLabel });
+    UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->activeGraphWidget, 4000), QPair<QWidget *, int>(this->ui->transferGraphWidget, 2000) }, 1);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->DiskTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->modelLabel, scheme->DiskHeaderValueColor, 12);
-    WidgetStyle::ApplyTextStyle(this->ui->activeGraphLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferGraphLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeTimeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeTimeRightLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferTimeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferTimeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->DiskTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->modelLabel, scheme->DiskHeaderValueColor, 13);
+    WidgetStyle::ApplyTextStyle(this->ui->activeGraphLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferGraphLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeTimeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeTimeRightLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferTimeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferTimeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {
@@ -98,16 +106,16 @@ DiskDetailWidget::~DiskDetailWidget()
 void DiskDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->DiskTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->modelLabel, scheme->DiskHeaderValueColor, 12);
-    WidgetStyle::ApplyTextStyle(this->ui->activeGraphLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferGraphLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeTimeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->activeTimeRightLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferTimeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->transferTimeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->DiskTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->modelLabel, scheme->DiskHeaderValueColor, 13);
+    WidgetStyle::ApplyTextStyle(this->ui->activeGraphLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferGraphLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeTimeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->activeTimeRightLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferTimeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->transferTimeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {

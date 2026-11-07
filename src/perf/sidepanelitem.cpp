@@ -23,7 +23,7 @@
 
 #include <QPainter>
 #include <QPaintEvent>
-#include <QVBoxLayout>
+#include <QHBoxLayout>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QEnterEvent>
 #endif
@@ -35,16 +35,18 @@ SidePanelItem::SidePanelItem(const QString &title, QWidget *parent) : QWidget(pa
     this->setCursor(Qt::PointingHandCursor);
     this->setMouseTracking(true);
 
-    // Layout: the graph fills most of the cell; title/subtitle are painted
-    // directly in paintEvent to avoid font layout overhead.
-    QVBoxLayout *lay = new QVBoxLayout(this);
-    lay->setContentsMargins(2, 22, 2, 2);   // leave room for title text
+    // Layout: small framed thumbnail graph on the left; title/subtitle are
+    // painted to its right in paintEvent.
+    QHBoxLayout *lay = new QHBoxLayout(this);
+    lay->setContentsMargins(kPadX, kPadY, 0, kPadY);
     lay->setSpacing(0);
+    this->m_graph->setFixedSize(kGraphW, kGraphH);
     this->m_graph->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->m_graph->SetGridEnabled(CFG->SidePanelGridEnabled);
     this->m_graph->SetHoverLineEnabled(false);
     this->m_graph->SetHoverTooltipEnabled(false);
-    lay->addWidget(this->m_graph);
+    lay->addWidget(this->m_graph, 0, Qt::AlignVCenter);
+    lay->addStretch(1);
     this->setLayout(lay);
 }
 
@@ -105,49 +107,47 @@ void SidePanelItem::paintEvent(QPaintEvent *event)
 
     p.fillRect(r, bg);
 
-    // Title/subtitle (single row): elide both sides to prevent overlap.
+    // Title (large) and subtitle (one or more lines) to the right of the graph.
     QFont titleFont = this->font();
-    titleFont.setBold(true);
-    titleFont.setPointSize(8);
-    const QFontMetrics titleFm(titleFont);
+    titleFont.setPointSizeF(titleFont.pointSizeF() * 1.45);
     QFont subFont = this->font();
-    subFont.setPointSize(7);
+    const QFontMetrics titleFm(titleFont);
     const QFontMetrics subFm(subFont);
 
-    const int left = 6;
-    const int right = 6;
-    const int top = 4;
-    const int textH = 16;
-    const int fullW = qMax(0, r.width() - left - right);
-
-    // Allow a longer subtitle while keeping enough room for a readable title.
-    const int maxSubW = (fullW * 58) / 100;
-    const QString subText = subFm.elidedText(this->m_subtitle, Qt::ElideLeft, maxSubW);
-    const int subW = subFm.horizontalAdvance(subText);
-
-    const int titleMaxW = qMax(0, fullW - (subW > 0 ? subW + 6 : 0));
-    const QString titleText = titleFm.elidedText(this->m_title, Qt::ElideRight, titleMaxW);
+    const int textLeft = kPadX + kGraphW + 12;
+    const int textW = qMax(0, r.width() - textLeft - 6);
+    const QStringList subLines = this->m_subtitle.split('\n');
+    const int blockH = titleFm.height() + 2 + subLines.size() * subFm.height();
+    int y = qMax(2, (r.height() - blockH) / 2);
 
     p.setFont(titleFont);
     p.setPen(this->m_selected ? scheme->SidePanelItemSelectedTextColor
                               : scheme->SidePanelItemTextColor);
-    p.drawText(QRect(left, top, titleMaxW, textH), Qt::AlignLeft | Qt::AlignVCenter, titleText);
+    p.drawText(QRect(textLeft, y, textW, titleFm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+               titleFm.elidedText(this->m_title, Qt::ElideRight, textW));
+    y += titleFm.height() + 2;
 
-    if (!subText.isEmpty())
+    p.setFont(subFont);
+    p.setPen(scheme->SidePanelItemSubtitleColor);
+    // A tab splits a line into two columns: the second one starts at a fixed
+    // position (width of "100%" plus a small gap) so it does not shift when the
+    // first value gains or loses a digit.
+    const int secondColumn = subFm.horizontalAdvance(QStringLiteral("100%")) + subFm.horizontalAdvance(QStringLiteral(" "));
+    for (const QString &line : subLines)
     {
-        p.setFont(subFont);
-        p.setPen(scheme->SidePanelItemSubtitleColor);
-        p.drawText(QRect(r.width() - right - subW, top, subW, textH),
-                   Qt::AlignRight | Qt::AlignVCenter,
-                   subText);
-    }
-
-    // Selection border
-    if (this->m_selected)
-    {
-        p.setPen(QPen(scheme->SidePanelItemSelectedBorderColor, 2));
-        p.setBrush(Qt::NoBrush);
-        p.drawRect(r.adjusted(1, 1, -1, -1));
+        const int tab = line.indexOf('\t');
+        if (tab >= 0)
+        {
+            p.drawText(QRect(textLeft, y, secondColumn, subFm.height()), Qt::AlignLeft | Qt::AlignVCenter, line.left(tab));
+            const int restW = qMax(0, textW - secondColumn);
+            p.drawText(QRect(textLeft + secondColumn, y, restW, subFm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                       subFm.elidedText(line.mid(tab + 1), Qt::ElideRight, restW));
+        } else
+        {
+            p.drawText(QRect(textLeft, y, textW, subFm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                       subFm.elidedText(line, Qt::ElideRight, textW));
+        }
+        y += subFm.height();
     }
 }
 

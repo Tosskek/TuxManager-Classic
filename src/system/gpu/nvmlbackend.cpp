@@ -76,6 +76,7 @@ namespace
     using FnNvmlDeviceGetTemperature = NvmlReturn (*)(NvmlDevice, unsigned int, unsigned int *);
     using FnNvmlDeviceGetClockInfo = NvmlReturn (*)(NvmlDevice, unsigned int, unsigned int *);
     using FnNvmlDeviceGetPowerUsage = NvmlReturn (*)(NvmlDevice, unsigned int *);
+    using FnNvmlDeviceGetEnforcedPowerLimit = NvmlReturn (*)(NvmlDevice, unsigned int *);
     using FnNvmlDeviceGetGraphicsRunningProcesses = NvmlReturn (*)(NvmlDevice, unsigned int *, NvmlProcessInfo_v2 *);
     using FnNvmlDeviceGetComputeRunningProcesses = NvmlReturn (*)(NvmlDevice, unsigned int *, NvmlProcessInfo_v2 *);
     using FnNvmlDeviceGetProcessUtilization = NvmlReturn (*)(NvmlDevice, NvmlProcessUtilizationSample *, unsigned int *, uint64_t);
@@ -99,6 +100,7 @@ namespace
     FnNvmlDeviceGetTemperature pNvmlDeviceGetTemperature = nullptr;
     FnNvmlDeviceGetClockInfo pNvmlDeviceGetClockInfo = nullptr;
     FnNvmlDeviceGetPowerUsage pNvmlDeviceGetPowerUsage = nullptr;
+    FnNvmlDeviceGetEnforcedPowerLimit pNvmlDeviceGetEnforcedPowerLimit = nullptr;
 
     GPU::GPUInfo *findOrCreateGpu(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus, const QString &id)
     {
@@ -164,6 +166,7 @@ void GpuNvmlBackend::Detect()
     pNvmlDeviceGetTemperature = reinterpret_cast<FnNvmlDeviceGetTemperature>(::dlsym(this->m_libHandle, "nvmlDeviceGetTemperature"));
     pNvmlDeviceGetClockInfo = reinterpret_cast<FnNvmlDeviceGetClockInfo>(::dlsym(this->m_libHandle, "nvmlDeviceGetClockInfo"));
     pNvmlDeviceGetPowerUsage = reinterpret_cast<FnNvmlDeviceGetPowerUsage>(::dlsym(this->m_libHandle, "nvmlDeviceGetPowerUsage"));
+    pNvmlDeviceGetEnforcedPowerLimit = reinterpret_cast<FnNvmlDeviceGetEnforcedPowerLimit>(::dlsym(this->m_libHandle, "nvmlDeviceGetEnforcedPowerLimit"));
     pNvmlDeviceGetGraphicsRunningProcesses = reinterpret_cast<FnNvmlDeviceGetGraphicsRunningProcesses>(::dlsym(this->m_libHandle, "nvmlDeviceGetGraphicsRunningProcesses_v3"));
     pNvmlDeviceGetComputeRunningProcesses = reinterpret_cast<FnNvmlDeviceGetComputeRunningProcesses>(::dlsym(this->m_libHandle, "nvmlDeviceGetComputeRunningProcesses_v3"));
     pNvmlDeviceGetProcessUtilization = reinterpret_cast<FnNvmlDeviceGetProcessUtilization>(::dlsym(this->m_libHandle, "nvmlDeviceGetProcessUtilization"));
@@ -253,6 +256,10 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         unsigned int powerMilliW = 0;
         const bool hasPower = pNvmlDeviceGetPowerUsage
                               && pNvmlDeviceGetPowerUsage(dev, &powerMilliW) == NVML_SUCCESS;
+        unsigned int powerLimitMilliW = 0;
+        const bool hasPowerLimit = pNvmlDeviceGetEnforcedPowerLimit
+                                   && pNvmlDeviceGetEnforcedPowerLimit(dev, &powerLimitMilliW) == NVML_SUCCESS
+                                   && powerLimitMilliW > 0;
 
         GPU::GPUInfo &gpu = *findOrCreateGpu(gpus, id);
         gpu.ID = id;
@@ -263,6 +270,7 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu.TemperatureC = hasTemp ? static_cast<int>(tempC) : -1;
         gpu.CoreClockMHz = hasCoreClock ? static_cast<int>(coreClockMHz) : -1;
         gpu.PowerUsageW = hasPower ? static_cast<double>(powerMilliW) / 1000.0 : -1.0;
+        gpu.PowerLimitW = hasPowerLimit ? static_cast<double>(powerLimitMilliW) / 1000.0 : -1.0;
         gpu.MemUsedMiB = hasMem ? static_cast<qint64>(mem.used / (1024ULL * 1024ULL)) : 0;
         gpu.MemTotalMiB = hasMem ? static_cast<qint64>(mem.total / (1024ULL * 1024ULL)) : 0;
         gpu.SharedMemUsedMiB = 0;
@@ -367,6 +375,10 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
             if (pNvmlDeviceGetDecoderUtilization(dev, &dec, &sampling) == NVML_SUCCESS)
                 addEngine(QStringLiteral("video-decode"), QStringLiteral("Video Decode"), dec);
         }
+
+        // Board power as a selectable "engine": percent of the enforced power limit.
+        if (hasPower && hasPowerLimit)
+            addEngine(QStringLiteral("power"), QStringLiteral("Power usage"), gpu.PowerUsageW / gpu.PowerLimitW * 100.0);
 
         zeroMissingEngines(gpu, seenEngineKeys);
         seenIds.insert(id);

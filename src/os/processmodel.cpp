@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../ui/heatcolor.h"
 #include "processmodel.h"
 
 #include "appregistry.h"
@@ -120,7 +121,7 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const
             case ColName:     return proc.Name;
             case ColUser:     return proc.User;
             case ColState:    return Process::GetStateString(proc.State);
-            case ColCpu:      return QString::number(proc.CPUPercent, 'f', 1) + " %";
+            case ColCpu:      return proc.CPUPercent < 0.05 ? QString("0%") : QString::number(proc.CPUPercent, 'f', 1) + "%";
             case ColMemRss:   return Misc::FormatKiB(proc.VMRssKb, 0);
             case ColMemVirt:  return Misc::FormatKiB(proc.vmSizeKb, 0);
             case ColMemShared:return Misc::FormatKiB(proc.SharedKb, 0);
@@ -140,6 +141,13 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const
             case ColPriority: return proc.Priority;
             case ColNice:     return proc.Nice;
             case ColCmdline:  return proc.CmdLine;
+            case ColDisk:
+            {
+                if (proc.IOPermissionDenied || !proc.IORatesAvailable)
+                    return QString("0 MB/s");
+                const double mb = (proc.IOReadBps + proc.IOWriteBps) / (1024.0 * 1024.0);
+                return mb < 0.05 ? QString("0 MB/s") : QString::number(mb, 'f', 1) + " MB/s";
+            }
             default: break;
         }
     }
@@ -172,10 +180,32 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const
                 return proc.IORatesAvailable
                        ? QVariant::fromValue(proc.IOWriteBps)
                        : QVariant::fromValue(-1.0);
+            case ColDisk:
+                return proc.IORatesAvailable ? proc.IOReadBps + proc.IOWriteBps : 0.0;
             case ColThreads:  return proc.Threads;
             case ColPriority: return proc.Priority;
             case ColNice:     return proc.Nice;
             default:          return this->data(index, Qt::DisplayRole);
+        }
+    }
+
+    if (role == Qt::BackgroundRole)
+    {
+        static const double cpuCapacity = 100.0 * qMax(1L, sysconf(_SC_NPROCESSORS_ONLN));
+        switch (static_cast<Column>(index.column()))
+        {
+            case ColCpu:
+                return HeatColor::ForFraction(proc.CPUPercent / cpuCapacity);
+            case ColMemRss:
+                return HeatColor::ForFraction(static_cast<double>(proc.VMRssKb) / HeatColor::TotalRamKb());
+            case ColIoReadsPerSec:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOReadBps) : 0.0);
+            case ColIoWritesPerSec:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOWriteBps) : 0.0);
+            case ColDisk:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOReadBps + proc.IOWriteBps) : 0.0);
+            default:
+                return {};
         }
     }
 
@@ -197,6 +227,7 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const
             case ColThreads:
             case ColPriority:
             case ColNice:
+            case ColDisk:
                 return QVariant(Qt::AlignRight | Qt::AlignVCenter);
             default:
                 return QVariant(Qt::AlignLeft | Qt::AlignVCenter);
@@ -274,7 +305,7 @@ void ProcessModel::SetProcesses(const QList<Process> &processes)
                 this->m_processes[row] = sortedProcesses.at(row);
                 emit dataChanged(this->index(row, 0),
                                  this->index(row, ColCount - 1),
-                                 { Qt::DisplayRole, Qt::DecorationRole, Qt::UserRole, Qt::TextAlignmentRole });
+                                 { Qt::DisplayRole, Qt::DecorationRole, Qt::UserRole, Qt::TextAlignmentRole, Qt::BackgroundRole });
             }
             ++row;
             continue;
@@ -427,9 +458,9 @@ QString ProcessModel::columnHeader(Column col)
         case ColPid:      return tr("PID");
         case ColName:     return tr("Name");
         case ColUser:     return tr("User");
-        case ColState:    return tr("State");
-        case ColCpu:      return tr("CPU %");
-        case ColMemRss:   return tr("MEM RES");
+        case ColState:    return tr("Status");
+        case ColCpu:      return tr("CPU");
+        case ColMemRss:   return tr("Memory");
         case ColMemVirt:  return tr("MEM VIRT");
         case ColMemShared:return tr("MEM SHR");
         case ColMemText:  return tr("MEM TEXT");
@@ -442,6 +473,7 @@ QString ProcessModel::columnHeader(Column col)
         case ColPriority: return tr("Priority");
         case ColNice:     return tr("Nice");
         case ColCmdline:  return tr("Command");
+        case ColDisk:     return tr("Disk");
         default:          return {};
     }
 }

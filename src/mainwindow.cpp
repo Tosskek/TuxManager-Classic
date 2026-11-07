@@ -19,6 +19,10 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "configuration.h"
+#include "ui/classictheme.h"
+
+#include <QShortcut>
+#include <QToolButton>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -48,6 +52,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         this->restoreState(CFG->WindowState);
     this->ui->tabWidget->setCurrentIndex(CFG->ActiveTab);
     this->updateTabActivity(this->ui->tabWidget->currentIndex());
+
+    // Light / dark switch in the top-right corner of the tab bar.
+    {
+        QToolButton *themeToggle = new QToolButton(this->ui->tabWidget);
+        themeToggle->setObjectName("themeToggle");
+        themeToggle->setCursor(Qt::PointingHandCursor);
+        themeToggle->setText(ClassicTheme::IsDark() ? tr("\u2600 Light mode") : tr("\u263E Dark mode"));
+        themeToggle->setToolTip(tr("Switch between light and dark mode (Ctrl+Shift+D)"));
+        connect(themeToggle, &QToolButton::clicked, this, []() { ClassicTheme::SwitchAndRestart(!ClassicTheme::IsDark()); });
+        this->ui->tabWidget->setCornerWidget(themeToggle, Qt::TopRightCorner);
+
+        QShortcut *shortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), this);
+        connect(shortcut, &QShortcut::activated, this, []() { ClassicTheme::SwitchAndRestart(!ClassicTheme::IsDark()); });
+    }
 
     // Keep ActiveTab in sync as the user switches tabs
     connect(this->ui->tabWidget, &QTabWidget::currentChanged, this, [this](int index)

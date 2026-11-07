@@ -36,6 +36,8 @@ namespace Misc
 
     //! Formats bytes per second with binary units and B/s fallback for sub-KB values.
     QString FormatBytesPerSecond(double bytesPerSec);
+    //! Always in megabytes per second, two decimals (e.g. "0.04 MB/s"), never switching units.
+    QString FormatMegabytesPerSecond(double bytesPerSec);
 
     //! Formats bits per second with binary units and b/s fallback for sub-Kb values.
     QString FormatBitsPerSecond(double bytesPerSec);

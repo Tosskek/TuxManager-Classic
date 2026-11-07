@@ -30,6 +30,8 @@ SOURCES += \
     system/storage.cpp \
     system/swap.cpp \
     ui/widgetstyle.cpp \
+    ui/classicheaderview.cpp \
+    ui/classictheme.cpp \
     ui/uihelper.cpp \
     configuration.cpp \
     logger.cpp \
@@ -86,6 +88,9 @@ HEADERS += \
     system/storage.h \
     system/swap.h \
     ui/widgetstyle.h \
+    ui/classicheaderview.h \
+    ui/classictheme.h \
+    ui/heatcolor.h \
     ui/uihelper.h \
     configuration.h \
     historybuffer.h \

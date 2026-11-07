@@ -143,60 +143,69 @@ ColorScheme ColorScheme::DefaultDark()
     ColorScheme scheme;
     scheme.DarkMode = true;
 
-    scheme.CpuGraphLineColor = QColor(0x00, 0xbc, 0xff);              // bright cyan
-    scheme.CpuGraphFillColor = QColor(0x00, 0x4c, 0x8a, 120);         // dark blue, semi-transparent
-    scheme.CpuGraphSecondaryFillColor = QColor(0x00, 0x22, 0x55, 160); // very dark navy, semi-transparent
-    scheme.MemoryGraphLineColor = QColor(0xcc, 0x44, 0xcc);            // medium purple
-    scheme.MemoryGraphFillColor = QColor(0x66, 0x11, 0x66, 130);       // dark purple, semi-transparent
-    scheme.DiskGraphLineColor = QColor(0x66, 0xbb, 0x44);              // medium green
-    scheme.DiskGraphFillColor = QColor(0x33, 0x66, 0x22, 120);         // dark green, semi-transparent
-    scheme.DiskTransferGraphLineColor = QColor(0x88, 0xcc, 0x66);      // light green
-    scheme.DiskTransferGraphFillColor = QColor(0x33, 0x66, 0x22, 100); // dark green, semi-transparent
-    scheme.DiskTransferGraphSecondaryFillColor = QColor(0x1f, 0x44, 0x15, 120); // very dark green, semi-transparent
-    scheme.NetworkGraphLineColor = QColor(0xdb, 0x8b, 0x3a);           // orange
-    scheme.NetworkGraphFillColor = QColor(0x66, 0x3f, 0x1f, 110);      // dark brown, semi-transparent
-    scheme.NetworkGraphSecondaryFillColor = QColor(0x4a, 0x28, 0x10, 130); // very dark brown, semi-transparent
-    scheme.GpuGraphLineColor = QColor(0x44, 0xa8, 0xff);               // light blue
-    scheme.GpuGraphFillColor = QColor(0x1e, 0x4d, 0x82, 110);          // dark blue, semi-transparent
-    scheme.GpuGraphSecondaryFillColor = QColor(0x14, 0x33, 0x58, 130); // very dark blue, semi-transparent
-    scheme.SwapUsageGraphLineColor = QColor(0xcc, 0x88, 0x44);         // amber
-    scheme.SwapUsageGraphFillColor = QColor(0x66, 0x33, 0x11, 120);    // dark brown, semi-transparent
-    scheme.SwapActivityGraphLineColor = QColor(0xcc, 0xaa, 0x66);      // tan/gold
-    scheme.SwapActivityGraphFillColor = QColor(0x66, 0x44, 0x22, 100); // dark tan, semi-transparent
-    scheme.SwapActivityGraphSecondaryFillColor = QColor(0x4a, 0x2d, 0x14, 120); // very dark brown, semi-transparent
-    scheme.GraphGridColor = QColor(0x88, 0x88, 0x99, 150);             // grey-blue, semi-transparent
-    scheme.GraphOverlayTextColor = QColor(245, 245, 245, 220);         // near white, semi-transparent
-    scheme.SidePanelBackgroundColor = QColor(0x12, 0x12, 0x1a);        // very dark navy
-    scheme.SidePanelItemSelectedBackgroundColor = QColor(0x1a, 0x4a, 0x8a, 200); // dark blue, semi-transparent
-    scheme.SidePanelItemHoverBackgroundColor = QColor(0x30, 0x30, 0x40, 120);    // dark grey-blue, semi-transparent
-    scheme.SidePanelItemBackgroundColor = QColor(0x1a, 0x1a, 0x22, 180);         // very dark grey, semi-transparent
-    scheme.SidePanelItemSelectedTextColor = QColor(0xff, 0xff, 0xff);   // white
-    scheme.SidePanelItemTextColor = QColor(0xcc, 0xcc, 0xcc);           // light grey
-    scheme.SidePanelItemSubtitleColor = QColor(0x88, 0xaa, 0xcc);       // steel blue
-    scheme.SidePanelItemSelectedBorderColor = QColor(0x44, 0x88, 0xff); // bright blue
-    scheme.CpuTitleColor = scheme.CpuGraphLineColor;
-    scheme.CpuHeaderValueColor = QColor(0xaa, 0xcc, 0xff);              // pale blue
-    scheme.MemoryTitleColor = scheme.MemoryGraphLineColor;
-    scheme.MemoryHeaderValueColor = QColor(0xdd, 0xaa, 0xdd);           // pale violet
-    scheme.DiskTitleColor = scheme.DiskGraphLineColor;
-    scheme.DiskHeaderValueColor = QColor(0xaa, 0xdd, 0xaa);             // pale green
-    scheme.NetworkTitleColor = scheme.NetworkGraphLineColor;
-    scheme.GpuTitleColor = scheme.GpuGraphLineColor;
-    scheme.MutedTextColor = QColor(0xaa, 0xaa, 0xaa);                   // medium grey
-    scheme.StatLabelColor = QColor(0x88, 0x88, 0x88);                   // grey
-    scheme.AxisLabelColor = QColor(0x66, 0x66, 0x66);                   // dark grey
-    scheme.MemoryLegendTextColor = QColor(0xaa, 0xaa, 0xaa);            // medium grey
-    scheme.MemoryLegendUsedColor = scheme.MemoryGraphLineColor;
-    scheme.MemoryLegendCompressedColor = QColor(0xaa, 0x66, 0xaa);      // muted purple
-    scheme.MemoryLegendDirtyColor = QColor(0xbb, 0x88, 0x00);           // amber/dark yellow
-    scheme.MemoryLegendCachedColor = QColor(0x55, 0x22, 0x55);          // dark purple
-    scheme.MemoryLegendFreeColor = QColor(0x33, 0x33, 0x33);            // very dark grey
-    scheme.MemoryBarUsedColor = scheme.MemoryGraphLineColor;
-    scheme.MemoryBarCompressedColor = QColor(0x77, 0x44, 0x77);         // dark purple
-    scheme.MemoryBarDirtyColor = QColor(0xbb, 0x88, 0x00);              // amber/dark yellow
-    scheme.MemoryBarCachedColor = QColor(0x55, 0x22, 0x55);             // dark purple
-    scheme.MemoryBarFreeColor = QColor(0x11, 0x08, 0x11);               // near black
-    scheme.MemoryBarBorderColor = QColor(0x88, 0x44, 0x88);             // muted purple
+    // Classic flat look, dark variant: same hues as the light scheme, lifted
+    // for contrast, over deep tinted fills; neutral grey panels, light text.
+    const QColor cpuBlue(0x3f, 0xa9, 0xf5);
+    const QColor memPurple(0xc0, 0x6e, 0xe0);
+    const QColor diskGreen(0x6c, 0xc6, 0x44);
+    const QColor netOrange(0xe0, 0x8a, 0x3c);
+    const QColor text(0xe8, 0xe8, 0xe8);
+    const QColor grey(0x9a, 0x9a, 0x9a);
+
+    scheme.CpuGraphLineColor = cpuBlue;
+    scheme.CpuGraphFillColor = QColor(0x17, 0x2a, 0x3b);
+    scheme.CpuGraphSecondaryFillColor = QColor(0x1f, 0x45, 0x66);
+    scheme.MemoryGraphLineColor = memPurple;
+    scheme.MemoryGraphFillColor = QColor(0x2c, 0x1d, 0x35);
+    scheme.DiskGraphLineColor = diskGreen;
+    scheme.DiskGraphFillColor = QColor(0x1c, 0x2e, 0x16);
+    scheme.DiskTransferGraphLineColor = diskGreen;
+    scheme.DiskTransferGraphFillColor = QColor(0x1c, 0x2e, 0x16);
+    scheme.DiskTransferGraphSecondaryFillColor = QColor(0x2b, 0x4a, 0x20);
+    scheme.NetworkGraphLineColor = netOrange;
+    scheme.NetworkGraphFillColor = QColor(0x35, 0x24, 0x14);
+    scheme.NetworkGraphSecondaryFillColor = QColor(0x55, 0x37, 0x1b);
+    scheme.GpuGraphLineColor = diskGreen;
+    scheme.GpuGraphFillColor = QColor(0x1c, 0x2e, 0x16);
+    scheme.GpuGraphSecondaryFillColor = QColor(0x2b, 0x4a, 0x20);
+    scheme.SwapUsageGraphLineColor = memPurple;
+    scheme.SwapUsageGraphFillColor = QColor(0x2c, 0x1d, 0x35);
+    scheme.SwapActivityGraphLineColor = memPurple;
+    scheme.SwapActivityGraphFillColor = QColor(0x2c, 0x1d, 0x35);
+    scheme.SwapActivityGraphSecondaryFillColor = QColor(0x45, 0x2a, 0x55);
+    scheme.GraphGridColor = QColor(0x33, 0x3d, 0x47);
+    scheme.GraphOverlayTextColor = QColor(0xc8, 0xc8, 0xc8);
+    scheme.SidePanelBackgroundColor = QColor(0x20, 0x20, 0x20);
+    scheme.SidePanelItemSelectedBackgroundColor = QColor(0x26, 0x4f, 0x78);
+    scheme.SidePanelItemHoverBackgroundColor = QColor(0x2a, 0x3b, 0x4d);
+    scheme.SidePanelItemBackgroundColor = QColor(0x20, 0x20, 0x20);
+    scheme.SidePanelItemSelectedTextColor = QColor(0xff, 0xff, 0xff);
+    scheme.SidePanelItemTextColor = text;
+    scheme.SidePanelItemSubtitleColor = QColor(0xc8, 0xc8, 0xc8);
+    scheme.SidePanelItemSelectedBorderColor = QColor(0x26, 0x4f, 0x78);
+    scheme.CpuTitleColor = text;
+    scheme.CpuHeaderValueColor = text;
+    scheme.MemoryTitleColor = text;
+    scheme.MemoryHeaderValueColor = text;
+    scheme.DiskTitleColor = text;
+    scheme.DiskHeaderValueColor = text;
+    scheme.NetworkTitleColor = text;
+    scheme.GpuTitleColor = text;
+    scheme.MutedTextColor = grey;
+    scheme.StatLabelColor = grey;
+    scheme.AxisLabelColor = grey;
+    scheme.MemoryLegendTextColor = grey;
+    scheme.MemoryLegendUsedColor = memPurple;
+    scheme.MemoryLegendCompressedColor = QColor(0x9a, 0x5c, 0xb8);
+    scheme.MemoryLegendDirtyColor = QColor(0xc8, 0x9a, 0x3a);
+    scheme.MemoryLegendCachedColor = QColor(0x45, 0x2a, 0x55);
+    scheme.MemoryLegendFreeColor = QColor(0x1a, 0x1a, 0x1a);
+    scheme.MemoryBarUsedColor = QColor(0x45, 0x2a, 0x55);
+    scheme.MemoryBarCompressedColor = QColor(0x5a, 0x37, 0x70);
+    scheme.MemoryBarDirtyColor = QColor(0x6a, 0x52, 0x20);
+    scheme.MemoryBarCachedColor = QColor(0x2c, 0x1d, 0x35);
+    scheme.MemoryBarFreeColor = QColor(0x1a, 0x1a, 0x1a);
+    scheme.MemoryBarBorderColor = memPurple;
     return scheme;
 }
 
@@ -205,60 +214,69 @@ ColorScheme ColorScheme::DefaultLight()
     ColorScheme scheme;
     scheme.DarkMode = false;
 
-    scheme.CpuGraphLineColor = QColor(0x00, 0x8f, 0xcc);              // medium blue
-    scheme.CpuGraphFillColor = QColor(0x99, 0xd9, 0xff, 120);         // pale sky blue, semi-transparent
-    scheme.CpuGraphSecondaryFillColor = QColor(0x5c, 0xb9, 0xec, 130); // light blue, semi-transparent
-    scheme.MemoryGraphLineColor = QColor(0xb0, 0x3d, 0xb0);            // medium purple
-    scheme.MemoryGraphFillColor = QColor(0xe7, 0xba, 0xe7, 130);       // pale lavender, semi-transparent
-    scheme.DiskGraphLineColor = QColor(0x5a, 0x9d, 0x3b);              // medium green
-    scheme.DiskGraphFillColor = QColor(0xc9, 0xe1, 0xbf, 120);         // pale green, semi-transparent
-    scheme.DiskTransferGraphLineColor = QColor(0x77, 0xb8, 0x4f);      // medium-light green
-    scheme.DiskTransferGraphFillColor = QColor(0xd8, 0xea, 0xcf, 110); // very pale green, semi-transparent
-    scheme.DiskTransferGraphSecondaryFillColor = QColor(0xbc, 0xd8, 0xad, 125); // light sage green, semi-transparent
-    scheme.NetworkGraphLineColor = QColor(0xc8, 0x74, 0x1d);           // burnt orange
-    scheme.NetworkGraphFillColor = QColor(0xf0, 0xcd, 0xaa, 115);      // pale peach, semi-transparent
-    scheme.NetworkGraphSecondaryFillColor = QColor(0xe2, 0xb1, 0x7a, 125); // light tan/orange, semi-transparent
-    scheme.GpuGraphLineColor = QColor(0x2e, 0x87, 0xd1);               // medium blue
-    scheme.GpuGraphFillColor = QColor(0xb6, 0xd6, 0xf3, 115);          // pale blue, semi-transparent
-    scheme.GpuGraphSecondaryFillColor = QColor(0x8b, 0xbf, 0xe9, 125); // light blue, semi-transparent
-    scheme.SwapUsageGraphLineColor = QColor(0xb4, 0x76, 0x35);         // medium brown
-    scheme.SwapUsageGraphFillColor = QColor(0xe7, 0xc9, 0xaa, 120);    // pale tan, semi-transparent
-    scheme.SwapActivityGraphLineColor = QColor(0xb3, 0x8d, 0x4b);      // golden tan
-    scheme.SwapActivityGraphFillColor = QColor(0xe8, 0xd8, 0xb8, 110); // pale gold, semi-transparent
-    scheme.SwapActivityGraphSecondaryFillColor = QColor(0xd5, 0xb8, 0x88, 125); // light gold, semi-transparent
-    scheme.GraphGridColor = QColor(0x80, 0x80, 0x80, 72);              // grey, semi-transparent
-    scheme.GraphOverlayTextColor = QColor(35, 35, 35, 220);            // near black, semi-transparent
-    scheme.SidePanelBackgroundColor = QColor(0xf3, 0xf5, 0xf8);        // very light grey-blue
-    scheme.SidePanelItemSelectedBackgroundColor = QColor(0x66, 0xa8, 0xff, 96); // medium blue, semi-transparent
-    scheme.SidePanelItemHoverBackgroundColor = QColor(0x00, 0x00, 0x00, 20);    // black, nearly transparent
-    scheme.SidePanelItemBackgroundColor = QColor(0xff, 0xff, 0xff);     // white
-    scheme.SidePanelItemSelectedTextColor = QColor(0x12, 0x24, 0x36);   // very dark navy
-    scheme.SidePanelItemTextColor = QColor(0x24, 0x24, 0x24);           // very dark grey
-    scheme.SidePanelItemSubtitleColor = QColor(0x5e, 0x7a, 0x96);       // steel blue-grey
-    scheme.SidePanelItemSelectedBorderColor = QColor(0x44, 0x88, 0xff); // bright blue
-    scheme.CpuTitleColor = scheme.CpuGraphLineColor;
-    scheme.CpuHeaderValueColor = QColor(0x5d, 0x84, 0xaa);              // steel blue
-    scheme.MemoryTitleColor = scheme.MemoryGraphLineColor;
-    scheme.MemoryHeaderValueColor = QColor(0xb5, 0x7f, 0xb5);           // muted purple
-    scheme.DiskTitleColor = scheme.DiskGraphLineColor;
-    scheme.DiskHeaderValueColor = QColor(0x74, 0xa5, 0x5d);             // medium green
-    scheme.NetworkTitleColor = scheme.NetworkGraphLineColor;
-    scheme.GpuTitleColor = scheme.GpuGraphLineColor;
-    scheme.MutedTextColor = QColor(0x77, 0x77, 0x77);                   // medium grey
-    scheme.StatLabelColor = QColor(0x7a, 0x7a, 0x7a);                   // medium grey
-    scheme.AxisLabelColor = QColor(0x6d, 0x6d, 0x6d);                   // dark grey
-    scheme.MemoryLegendTextColor = QColor(0x77, 0x77, 0x77);            // medium grey
-    scheme.MemoryLegendUsedColor = scheme.MemoryGraphLineColor;
-    scheme.MemoryLegendCompressedColor = QColor(0xb4, 0x73, 0xb4);      // medium purple
-    scheme.MemoryLegendDirtyColor = QColor(0xb0, 0x85, 0x23);           // golden amber
-    scheme.MemoryLegendCachedColor = QColor(0x9b, 0x75, 0x9b);          // muted purple
-    scheme.MemoryLegendFreeColor = QColor(0x8c, 0x8c, 0x8c);            // medium grey
-    scheme.MemoryBarUsedColor = QColor(0xc9, 0x7f, 0xc9);               // medium purple
-    scheme.MemoryBarCompressedColor = QColor(0xbc, 0x93, 0xbc);         // light purple
-    scheme.MemoryBarDirtyColor = QColor(0xd1, 0xa0, 0x3e);              // golden amber
-    scheme.MemoryBarCachedColor = QColor(0xd7, 0xbf, 0xd7);             // pale lavender
-    scheme.MemoryBarFreeColor = QColor(0xe9, 0xe9, 0xe9);               // very light grey
-    scheme.MemoryBarBorderColor = QColor(0xb0, 0x93, 0xb0);             // muted lavender
+    // Classic flat look: one strong line colour per resource, a very pale
+    // fill underneath, white panels and black text.
+    const QColor cpuBlue(0x11, 0x7d, 0xbb);
+    const QColor memPurple(0x8b, 0x12, 0xae);
+    const QColor diskGreen(0x4d, 0xa6, 0x0c);
+    const QColor netBrown(0xa7, 0x4f, 0x01);
+    const QColor black(0x00, 0x00, 0x00);
+    const QColor grey(0x70, 0x70, 0x70);
+
+    scheme.CpuGraphLineColor = cpuBlue;
+    scheme.CpuGraphFillColor = QColor(0xf1, 0xf6, 0xfa);
+    scheme.CpuGraphSecondaryFillColor = QColor(0xc4, 0xdc, 0xec);
+    scheme.MemoryGraphLineColor = memPurple;
+    scheme.MemoryGraphFillColor = QColor(0xf4, 0xf2, 0xf4);
+    scheme.DiskGraphLineColor = diskGreen;
+    scheme.DiskGraphFillColor = QColor(0xef, 0xf7, 0xe9);
+    scheme.DiskTransferGraphLineColor = diskGreen;
+    scheme.DiskTransferGraphFillColor = QColor(0xef, 0xf7, 0xe9);
+    scheme.DiskTransferGraphSecondaryFillColor = QColor(0xd2, 0xe9, 0xc2);
+    scheme.NetworkGraphLineColor = netBrown;
+    scheme.NetworkGraphFillColor = QColor(0xfc, 0xf3, 0xeb);
+    scheme.NetworkGraphSecondaryFillColor = QColor(0xf0, 0xd6, 0xbd);
+    scheme.GpuGraphLineColor = diskGreen;
+    scheme.GpuGraphFillColor = QColor(0xef, 0xf7, 0xe9);
+    scheme.GpuGraphSecondaryFillColor = QColor(0xd2, 0xe9, 0xc2);
+    scheme.SwapUsageGraphLineColor = memPurple;
+    scheme.SwapUsageGraphFillColor = QColor(0xf4, 0xf2, 0xf4);
+    scheme.SwapActivityGraphLineColor = memPurple;
+    scheme.SwapActivityGraphFillColor = QColor(0xf4, 0xf2, 0xf4);
+    scheme.SwapActivityGraphSecondaryFillColor = QColor(0xdc, 0xc4, 0xe4);
+    scheme.GraphGridColor = QColor(0xd9, 0xea, 0xf4);
+    scheme.GraphOverlayTextColor = QColor(0x50, 0x50, 0x50);
+    scheme.SidePanelBackgroundColor = QColor(0xff, 0xff, 0xff);
+    scheme.SidePanelItemSelectedBackgroundColor = QColor(0xcc, 0xe8, 0xff);
+    scheme.SidePanelItemHoverBackgroundColor = QColor(0xe5, 0xf3, 0xff);
+    scheme.SidePanelItemBackgroundColor = QColor(0xff, 0xff, 0xff);
+    scheme.SidePanelItemSelectedTextColor = black;
+    scheme.SidePanelItemTextColor = black;
+    scheme.SidePanelItemSubtitleColor = black;
+    scheme.SidePanelItemSelectedBorderColor = QColor(0xcc, 0xe8, 0xff);
+    scheme.CpuTitleColor = black;
+    scheme.CpuHeaderValueColor = black;
+    scheme.MemoryTitleColor = black;
+    scheme.MemoryHeaderValueColor = black;
+    scheme.DiskTitleColor = black;
+    scheme.DiskHeaderValueColor = black;
+    scheme.NetworkTitleColor = black;
+    scheme.GpuTitleColor = black;
+    scheme.MutedTextColor = grey;
+    scheme.StatLabelColor = grey;
+    scheme.AxisLabelColor = grey;
+    scheme.MemoryLegendTextColor = grey;
+    scheme.MemoryLegendUsedColor = memPurple;
+    scheme.MemoryLegendCompressedColor = QColor(0xb9, 0x6f, 0xcf);
+    scheme.MemoryLegendDirtyColor = QColor(0xb0, 0x85, 0x23);
+    scheme.MemoryLegendCachedColor = QColor(0xdc, 0xc4, 0xe4);
+    scheme.MemoryLegendFreeColor = QColor(0xff, 0xff, 0xff);
+    scheme.MemoryBarUsedColor = QColor(0xdc, 0xc4, 0xe4);
+    scheme.MemoryBarCompressedColor = QColor(0xc9, 0xa6, 0xd6);
+    scheme.MemoryBarDirtyColor = QColor(0xe0, 0xc0, 0x7a);
+    scheme.MemoryBarCachedColor = QColor(0xf4, 0xf2, 0xf4);
+    scheme.MemoryBarFreeColor = QColor(0xff, 0xff, 0xff);
+    scheme.MemoryBarBorderColor = memPurple;
     return scheme;
 }
 

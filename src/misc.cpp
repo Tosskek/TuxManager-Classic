@@ -56,6 +56,11 @@ QString Misc::SimplifyTimeMS(int ms)
     return QString::number(ms) + " ms";
 }
 
+QString Misc::FormatMegabytesPerSecond(double bytesPerSec)
+{
+    return QString::number(qMax(0.0, bytesPerSec) / (1024.0 * 1024.0), 'f', 2) + " MB/s";
+}
+
 QString Misc::FormatBytesPerSecond(double bytesPerSec)
 {
     const double v = (bytesPerSec < 0.0) ? 0.0 : bytesPerSec;

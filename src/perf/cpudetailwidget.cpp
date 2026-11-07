@@ -27,6 +27,7 @@
 #include <QAction>
 #include <QFile>
 #include <QGridLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
 #include <QVBoxLayout>
@@ -36,13 +37,21 @@ using namespace Perf;
 CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::CpuDetailWidget)
 {
     this->ui->setupUi(this);
+    {
+        // Content sits ~25 screen pixels further right and ~20 lower (15 / 12 px at the default UI scale).
+        QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setLeft(m.left() + 15);
+        m.setTop(m.top() + 12);
+        this->ui->verticalLayout->setContentsMargins(m);
+    }
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->statUtilValue, this->ui->statSpeedValue, this->ui->statProcessesValue, this->ui->statThreadsValue, this->ui->statUptimeValue });
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->CpuTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->modelNameLabel, scheme->MutedTextColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->CpuTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->modelNameLabel, scheme->CpuHeaderValueColor, 13);
     WidgetStyle::ApplyTextStyle(this->ui->utilizationLabel, scheme->CpuHeaderValueColor, 18);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {
@@ -57,6 +66,36 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
                 }
             }
         }
+    }
+
+    // Classic header: "CPU" on the left, model name on the right, baseline-aligned.
+    this->ui->headerLabelLayout->removeWidget(this->ui->modelNameLabel);
+    this->ui->modelNameLabel->setWordWrap(false);
+    this->ui->modelNameLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+    this->ui->headerLayout->insertWidget(1, this->ui->modelNameLabel, 0, Qt::AlignRight | Qt::AlignBottom);
+    this->ui->utilizationLabel->hide();
+
+    // "% Utilization ............ 100%" caption above the graph.
+    {
+        QHBoxLayout *caption = new QHBoxLayout();
+        caption->setContentsMargins(0, 6, 0, 0);
+        this->m_graphCaptionLeft = new QLabel(tr("% Utilization"), this);
+        this->m_graphCaptionRight = new QLabel(tr("100%"), this);
+        caption->addWidget(this->m_graphCaptionLeft);
+        caption->addStretch(1);
+        caption->addWidget(this->m_graphCaptionRight);
+        WidgetStyle::ApplyTextStyle(this->m_graphCaptionLeft, scheme->AxisLabelColor, 9);
+        WidgetStyle::ApplyTextStyle(this->m_graphCaptionRight, scheme->AxisLabelColor, 9);
+        const int graphIndex = this->ui->verticalLayout->indexOf(this->ui->graphAreaContainer);
+        this->ui->verticalLayout->insertLayout(graphIndex, caption);
+        this->ui->verticalLayout->setStretch(graphIndex, 0);
+        // Graph keeps the classic proportion (height ~0.42 x width), stats sit
+        // right below it, and any spare height collects at the very bottom.
+        this->ui->verticalLayout->setStretch(graphIndex + 1, 1000);
+        this->ui->verticalLayout->addStretch(1);
+        UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout, { this->ui->graphAreaContainer },
+                                         { this->ui->headerLayout, caption, this->ui->timeAxisLayout }, 0.05);
+        UIHelper::ApplyClassicPageGeometry(this, { qMakePair(static_cast<QWidget *>(this->ui->graphAreaContainer), 0.42) });
     }
 
     // Embed CpuGraphArea into the plain container widget from the .ui
@@ -102,11 +141,11 @@ void CpuDetailWidget::Init()
 void CpuDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->CpuTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->modelNameLabel, scheme->MutedTextColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->CpuTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->modelNameLabel, scheme->CpuHeaderValueColor, 13);
     WidgetStyle::ApplyTextStyle(this->ui->utilizationLabel, scheme->CpuHeaderValueColor, 18);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {

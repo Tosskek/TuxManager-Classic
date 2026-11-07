@@ -299,7 +299,8 @@ void PerformanceWidget::setupNetworkPanels()
         const Network::NetworkInfo &network = Metrics::GetNetwork()->FromIndex(i);
         this->m_networkNames.append(network.Name);
 
-        auto *item = new Perf::SidePanelItem(tr("NIC (%1)").arg(network.Name), this);
+        // "Network" when there is one adapter; with several, the interface name tells them apart.
+        auto *item = new Perf::SidePanelItem(count == 1 ? tr("Network") : tr("Network (%1)").arg(network.Name), this);
         item->SetGraphColor(scheme->NetworkGraphLineColor, scheme->NetworkGraphFillColor);
         item->SetGraphSource(network.RxHistory, 1024.0);
         this->m_sidePanel->AddItem(item);
@@ -323,7 +324,7 @@ void PerformanceWidget::onProviderUpdated()
     const double cpuPct = Metrics::GetCPU()->CpuPercent();
     const int cpuTempC = Metrics::GetCPU()->CpuTemperatureC();
     const QString cpuSub = (cpuTempC >= 0)
-                           ? tr("%1%2 %3C", "%1=value %2=percent sign %3=temperature in Celsius")
+                           ? tr("%1%2\t%3C", "%1=value %2=percent sign %3=temperature in Celsius")
                                  .arg(QString::number(cpuPct, 'f', 0), "%", QString::number(cpuTempC))
                            : QString::number(cpuPct, 'f', 0) + "%";
     if (CFG->PerfShowCpu)
@@ -335,10 +336,13 @@ void PerformanceWidget::onProviderUpdated()
     const int    pct     = total > 0
                            ? static_cast<int>(static_cast<double>(used) / total * 100.0)
                            : 0;
-    const QString memSub = QString("%1/%2 (%3%)")
-                           .arg(Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, used)), 1),
-                                Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, total)), 1),
-                                QString::number(pct));
+    // "6.2/62.7 GB (9%)": the unit is written once when both values share it.
+    QString usedText = Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, used)), 1);
+    const QString totalText = Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, total)), 1);
+    const QString usedUnit = usedText.section(' ', -1);
+    if (usedText.contains(' ') && usedUnit == totalText.section(' ', -1))
+        usedText = usedText.section(' ', 0, -2);
+    const QString memSub = QString("%1/%2 (%3%)").arg(usedText, totalText, QString::number(pct));
     if (CFG->PerfShowMemory)
         this->m_memoryItem->Update(memSub);
 
@@ -375,7 +379,7 @@ void PerformanceWidget::onProviderUpdated()
 
             const Storage::DiskInfo &disk = Metrics::GetStorage()->FromIndex(i);
             const QString diskSub = tr("%1 %2", "%1=disk type %2=active percentage").arg(disk.Type, QString::number(disk.ActivePct, 'f', 0) + "%");
-            item->Update(diskSub);
+            item->Update(QString(diskSub).replace(' ', '\n'));
         }
     }
 
@@ -393,7 +397,7 @@ void PerformanceWidget::onProviderUpdated()
             const QString utilText = tr("%1%2", "%1=GPU utilization value %2=percent sign").arg(QString::number(gpu.UtilPct, 'f', 0), "%");
             const int tempC = gpu.TemperatureC;
             const QString sub = (tempC >= 0)
-                                ? tr("%1 %2C", "%1=GPU utilization %2=temperature in Celsius")
+                                ? tr("%1\t%2C", "%1=GPU utilization %2=temperature in Celsius")
                                       .arg(utilText, QString::number(tempC))
                                 : utilText;
             item->Update(sub);
@@ -411,14 +415,10 @@ void PerformanceWidget::onProviderUpdated()
                 continue;
 
             const Network::NetworkInfo &network = Metrics::GetNetwork()->FromIndex(i);
-            const QString uploadRate = CFG->PerfNetworkUseBits
-                                       ? Misc::FormatBitsPerSecond(network.TxBps)
-                                       : Misc::FormatBytesPerSecond(network.TxBps);
-            const QString downloadRate = CFG->PerfNetworkUseBits
-                                         ? Misc::FormatBitsPerSecond(network.RxBps)
-                                         : Misc::FormatBytesPerSecond(network.RxBps);
+            const QString uploadRate = Misc::FormatMegabytesPerSecond(network.TxBps);
+            const QString downloadRate = Misc::FormatMegabytesPerSecond(network.RxBps);
             const QString netSub = tr("U:%1 D:%2", "%1=upload rate %2=download rate").arg(uploadRate, downloadRate);
-            item->Update(netSub, network.MaxThroughputBps);
+            item->Update(QString(netSub).replace(" D:", "\nD:"), network.MaxThroughputBps);
         }
     }
 }

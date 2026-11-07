@@ -42,6 +42,7 @@ namespace Perf
                 Percent,       ///< 0..100%
                 BytesPerSec,   ///< B/s, KB/s, MB/s, GB/s
                 BitsPerSec,    ///< b/s, Kb/s, Mb/s, Gb/s
+                MegabytesPerSec, ///< Always MB/s
                 Raw            ///< Plain number
             };
 

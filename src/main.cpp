@@ -21,11 +21,15 @@
 #include "i18n.h"
 #include "logger.h"
 #include "globals.h"
+#include "ui/classictheme.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <QIcon>
+#include <QFont>
+#include <QPalette>
+#include <QStyleFactory>
 #include <cstdio>
 #include <cstring>
 
@@ -66,11 +70,23 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Render the whole UI at 80% size (fonts, graphs, paddings alike).
+    // Override with e.g. TUX_MANAGER_SCALE=0.75 without rebuilding.
+    if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
+    {
+        const QByteArray scale = qEnvironmentVariableIsSet("TUX_MANAGER_SCALE")
+                                 ? qgetenv("TUX_MANAGER_SCALE") : QByteArray("0.8");
+        qputenv("QT_SCALE_FACTOR", scale);
+    }
+
     QApplication a(argc, argv);
     a.setOrganizationName(TUX_MANAGER_PRODUCT_NAME);
     a.setApplicationName(TUX_MANAGER_PRODUCT_NAME);
     a.setApplicationVersion(TUX_MANAGER_VERSION_STRING);
     a.setWindowIcon(QIcon(":/tux_manager_256.ico"));
+
+    // ── Classic flat look, light or dark (saved choice) ──────────────────────
+    ClassicTheme::Apply(a);
 
     // ── Command-line parsing (remaining options) ──────────────────────────────
     QCommandLineParser parser;

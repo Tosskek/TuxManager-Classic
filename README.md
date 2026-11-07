@@ -2,6 +2,39 @@
 
 A Linux Task Manager alternative built with Qt6, inspired by the Windows Task Manager but designed to go further - providing deep visibility into system processes, performance metrics, users, and services.
 
+> **TuxManager-Classic** — this is a fork of [benapetr/TuxManager](https://github.com/benapetr/TuxManager)
+> with a flat, classic Task Manager look. All credit for the original program goes to Petr Bena;
+> this fork only changes the appearance and a few defaults. Licensed under GPL-3.0 like the original.
+
+## What this fork changes
+
+**Look and feel**
+- Flat classic theme independent of the desktop theme, with a light/dark toggle (tab-bar corner button or `Ctrl+Shift+D`)
+- Arial font and a compact 0.8 UI scale by default (override with `TUX_MANAGER_SCALE=0.75`, `1.0`, …)
+
+**Performance tab**
+- Sidebar with thumbnail graphs and large titles; CPU/GPU temperature in a fixed column
+- Detail pages with a large title and device name, graphs that keep their proportions, and big headline numbers with a compact details table
+- GPU: *Power usage* added to the engine graphs (NVIDIA/NVML, scaled to the board power limit); default graphs are Power usage, 3D, Copy and CUDA; duplicate shared/dedicated memory stats removed
+- Network: speeds always shown in MB/s, adapter shown as "Network", IPv6 row removed
+
+**Processes tab**
+- Two-line header with total CPU / Memory / Disk usage above the column names
+- Heat-map shading of busy CPU, memory and disk cells
+- Default columns Name, Status, CPU, Memory and a combined Disk (MB/s) column
+- Grouped view: helper processes fold under their program, kernel threads fold under `kthreadd`
+
+### Building this fork
+```bash
+sudo apt install build-essential qt6-base-dev qmake6
+git clone https://github.com/Tosskek/TuxManager-Classic.git
+mkdir build && cd build
+qmake6 ../TuxManager-Classic/src/TuxManager.pro && make -j$(nproc)
+./tux-manager
+```
+
+---
+
 [Open full-size screenshots](screenshots/screenshots.md)
 
 ## Screenshots (Dark Theme)

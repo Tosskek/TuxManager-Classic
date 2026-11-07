@@ -80,7 +80,7 @@ class Configuration : public QObject
 
         // ── Performance tab (GPU) ─────────────────────────────────────────────
         /// Selected engine indices for the 4 GPU engine selectors.
-        QVector<int> GpuEngineSelectorIndices { 0, 1, 2, 3 };
+        QVector<int> GpuEngineSelectorIndices;   ///< Empty = default engines (Power usage, 3D, Copy, CUDA).
         /// CPU graph mode: 0 = overall, 1 = logical processors.
         int CpuGraphMode { 0 };
         /// Swap graph mode: 0 = overall, 1 = swap devices.

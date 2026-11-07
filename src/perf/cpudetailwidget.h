@@ -28,6 +28,8 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class CpuDetailWidget; }
 QT_END_NAMESPACE
 
+class QLabel;
+
 namespace Perf
 {
     class CpuDetailWidget : public QWidget
@@ -47,6 +49,8 @@ namespace Perf
 
         private:
             Ui::CpuDetailWidget  *ui;
+            QLabel *m_graphCaptionLeft { nullptr };
+            QLabel *m_graphCaptionRight { nullptr };
             CpuGraphArea         *m_graphArea  { nullptr };
     };
 } // namespace Perf

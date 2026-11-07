@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../ui/heatcolor.h"
 #include "processtreemodel.h"
 
 #include "appregistry.h"
@@ -98,10 +99,12 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
         switch (static_cast<Column>(index.column()))
         {
             case ColPid:      return proc.PID;
-            case ColName:     return proc.Name;
+            case ColName:
+                return node->children.isEmpty() ? proc.Name
+                                                : QString("%1 (%2)").arg(proc.Name).arg(node->children.size());
             case ColUser:     return proc.User;
             case ColState:    return Process::GetStateString(proc.State);
-            case ColCpu:      return QString::number(proc.CPUPercent, 'f', 1) + " %";
+            case ColCpu:      return proc.CPUPercent < 0.05 ? QString("0%") : QString::number(proc.CPUPercent, 'f', 1) + "%";
             case ColMemRss:   return Misc::FormatKiB(proc.VMRssKb, 0);
             case ColMemVirt:  return Misc::FormatKiB(proc.vmSizeKb, 0);
             case ColMemShared:return Misc::FormatKiB(proc.SharedKb, 0);
@@ -121,6 +124,13 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
             case ColPriority: return proc.Priority;
             case ColNice:     return proc.Nice;
             case ColCmdline:  return proc.CmdLine;
+            case ColDisk:
+            {
+                if (proc.IOPermissionDenied || !proc.IORatesAvailable)
+                    return QString("0 MB/s");
+                const double mb = (proc.IOReadBps + proc.IOWriteBps) / (1024.0 * 1024.0);
+                return mb < 0.05 ? QString("0 MB/s") : QString::number(mb, 'f', 1) + " MB/s";
+            }
             default: break;
         }
     }
@@ -152,10 +162,32 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
                 return proc.IORatesAvailable
                        ? QVariant::fromValue(proc.IOWriteBps)
                        : QVariant::fromValue(-1.0);
+            case ColDisk:
+                return proc.IORatesAvailable ? proc.IOReadBps + proc.IOWriteBps : 0.0;
             case ColThreads:  return proc.Threads;
             case ColPriority: return proc.Priority;
             case ColNice:     return proc.Nice;
             default:          return data(index, Qt::DisplayRole);
+        }
+    }
+
+    if (role == Qt::BackgroundRole)
+    {
+        static const double cpuCapacity = 100.0 * qMax(1L, sysconf(_SC_NPROCESSORS_ONLN));
+        switch (static_cast<Column>(index.column()))
+        {
+            case ColCpu:
+                return HeatColor::ForFraction(proc.CPUPercent / cpuCapacity);
+            case ColMemRss:
+                return HeatColor::ForFraction(static_cast<double>(proc.VMRssKb) / HeatColor::TotalRamKb());
+            case ColIoReadsPerSec:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOReadBps) : 0.0);
+            case ColIoWritesPerSec:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOWriteBps) : 0.0);
+            case ColDisk:
+                return HeatColor::ForFraction(proc.IORatesAvailable ? HeatColor::IoFraction(proc.IOReadBps + proc.IOWriteBps) : 0.0);
+            default:
+                return {};
         }
     }
 
@@ -176,6 +208,7 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
             case ColThreads:
             case ColPriority:
             case ColNice:
+            case ColDisk:
                 return QVariant(Qt::AlignRight | Qt::AlignVCenter);
             default:
                 return QVariant(Qt::AlignLeft | Qt::AlignVCenter);
@@ -220,10 +253,17 @@ void ProcessTreeModel::SetProcesses(const QList<Process> &processes)
 
     for (Node *node : nodes)
     {
+        // Classic grouping instead of the full parent chain:
+        //  - kernel threads (children of kthreadd, PID 2) fold under kthreadd;
+        //  - helper processes of the same program (parent has the same name)
+        //    fold under that program, like "app (3)";
+        //  - everything else is a top-level row, so apps are never buried
+        //    under systemd / the session manager.
         Node *parent = this->m_root;
         const pid_t ppid = node->process.PPID;
-        if (ppid > 0 && ppid != node->process.PID && this->m_byPid.contains(ppid))
-            parent = this->m_byPid.value(ppid);
+        Node *ppNode = (ppid > 0 && ppid != node->process.PID) ? this->m_byPid.value(ppid, nullptr) : nullptr;
+        if (ppNode && (ppid == 2 || ppNode->process.Name == node->process.Name))
+            parent = ppNode;
 
         node->parent = parent;
         parent->children.append(node);
@@ -250,9 +290,9 @@ QString ProcessTreeModel::columnHeader(Column col)
         case ColPid:      return tr("PID");
         case ColName:     return tr("Name");
         case ColUser:     return tr("User");
-        case ColState:    return tr("State");
-        case ColCpu:      return tr("CPU %");
-        case ColMemRss:   return tr("MEM RES");
+        case ColState:    return tr("Status");
+        case ColCpu:      return tr("CPU");
+        case ColMemRss:   return tr("Memory");
         case ColMemVirt:  return tr("MEM VIRT");
         case ColMemShared:return tr("MEM SHR");
         case ColMemText:  return tr("MEM TEXT");
@@ -265,6 +305,7 @@ QString ProcessTreeModel::columnHeader(Column col)
         case ColPriority: return tr("Priority");
         case ColNice:     return tr("Nice");
         case ColCmdline:  return tr("Command");
+        case ColDisk:     return tr("Disk");
         default:          return {};
     }
 }

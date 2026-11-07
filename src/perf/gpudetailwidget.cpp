@@ -25,7 +25,9 @@
 #include "../ui/uihelper.h"
 #include "../ui/widgetstyle.h"
 
+#include <QEvent>
 #include <QGridLayout>
+#include <QLabel>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
@@ -33,17 +35,70 @@ using namespace Perf;
 
 namespace
 {
+
     const HistoryBuffer kEmptyHistory;
 }
 
 GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::GpuDetailWidget)
 {
     this->ui->setupUi(this);
+    {
+        // Content sits ~25 screen pixels further right and ~20 lower (15 / 12 px at the default UI scale).
+        QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setLeft(m.left() + 15);
+        m.setTop(m.top() + 12);
+        this->ui->verticalLayout->setContentsMargins(m);
+    }
+    // Shared GPU memory is not shown: drop its graph, captions and stat entirely.
+    for (QWidget *w : { static_cast<QWidget *>(this->ui->sharedMemGraphLabel), static_cast<QWidget *>(this->ui->sharedMemGraphMaxLabel),
+                        static_cast<QWidget *>(this->ui->sharedMemGraphWidget), static_cast<QWidget *>(this->ui->sharedTimeLeftLabel),
+                        static_cast<QWidget *>(this->ui->sharedTimeRightLabel), static_cast<QWidget *>(this->ui->sharedMemLabel),
+                        static_cast<QWidget *>(this->ui->sharedMemValueLabel) })
+    {
+        w->hide();
+    }
+    this->ui->sharedHeaderSpacer->changeSize(0, 0);
+    this->ui->sharedTimeSpacer->changeSize(0, 0);
+    // Engine area also holds two rows of engine selectors above its graphs.
+    this->ui->engineAreaContainer->setProperty("classicExtraHeight", 70);
+    this->ui->statsGrid->removeWidget(this->ui->sharedMemLabel);
+    this->ui->statsGrid->removeWidget(this->ui->sharedMemValueLabel);
+    // "Dedicated GPU memory" repeats the GPU Memory value: drop it, so GPU Memory
+    // moves up next to Utilization.
+    this->ui->statsGrid->removeWidget(this->ui->dedicatedMemLabel);
+    this->ui->statsGrid->removeWidget(this->ui->dedicatedMemValueLabel);
+    this->ui->dedicatedMemLabel->hide();
+    this->ui->dedicatedMemValueLabel->hide();
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->utilValueLabel, this->ui->gpuMemValueLabel });
+    // Graph rows are drawn 10% narrower than the page; their heights follow.
+    UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout,
+        { this->ui->engineAreaContainer, this->ui->dedicatedMemGraphWidget, this->ui->copyBwGraphWidget },
+        { this->ui->headerLayout, this->ui->dedicatedHeaderLayout, this->ui->dedicatedTimeAxisLayout,
+          this->ui->copyHeaderLayout, this->ui->copyTimeAxisLayout }, 0.10);
+    // Tighter stats block so the page needs less width: smaller gaps between the
+    // big numbers and before the details table.
+    this->ui->statsGrid->setHorizontalSpacing(24);
+    if (QLayoutItem *bigItem = this->ui->statsGrid->itemAtPosition(0, 0))
+    {
+        if (QGridLayout *big = qobject_cast<QGridLayout *>(bigItem->layout()))
+            big->setHorizontalSpacing(18);
+    }
+    // Memory values ("1.9 GB / 12.0 GB") are long; a slightly smaller size keeps
+    // the stats row within the graphs' width.
+    for (QLabel *value : { this->ui->utilValueLabel, this->ui->gpuMemValueLabel })
+        value->setStyleSheet(value->styleSheet().replace("font-size: 19pt", "font-size: 16pt"));
+    if (QLayoutItem *tableItem = this->ui->statsGrid->itemAtPosition(0, 1))
+    {
+        if (QGridLayout *table = qobject_cast<QGridLayout *>(tableItem->layout()))
+            table->setHorizontalSpacing(14);
+    }
+    UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->engineAreaContainer, 4000), QPair<QWidget *, int>(this->ui->dedicatedMemGraphWidget, 1000), QPair<QWidget *, int>(this->ui->copyBwGraphWidget, 1000) }, 1);
 
     const ColorScheme *scheme = ColorScheme::GetCurrent();
     this->m_selectedEngineBySlot = CFG->GpuEngineSelectorIndices;
+    // -1 = not chosen yet: the slot gets its default engine once engines are known.
     while (this->m_selectedEngineBySlot.size() < 4)
-        this->m_selectedEngineBySlot.append(this->m_selectedEngineBySlot.size());
+        this->m_selectedEngineBySlot.append(-1);
     if (this->m_selectedEngineBySlot.size() > 4)
         this->m_selectedEngineBySlot.resize(4);
 
@@ -58,12 +113,15 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
 
     auto *graphsGrid = new QGridLayout();
     graphsGrid->setContentsMargins(0, 0, 0, 0);
-    graphsGrid->setHorizontalSpacing(6);
-    graphsGrid->setVerticalSpacing(6);
+    // Cells carry no inner padding so the engine graphs line up with the
+    // full-width graphs below; the gap between columns comes from the grid.
+    graphsGrid->setHorizontalSpacing(24);
+    graphsGrid->setVerticalSpacing(14);
 
     for (int slot = 0; slot < 4; ++slot)
     {
         auto *cell = new QVBoxLayout();
+        cell->setContentsMargins(0, 0, 0, 0);
         cell->setSpacing(2);
 
         auto *top = new QHBoxLayout();
@@ -77,7 +135,7 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
 
         auto *graph = new GraphWidget(this);
         configureGraph(graph);
-        graph->setMinimumHeight(120);
+        graph->setMinimumHeight(40);
         UIHelper::EnableGraphContextMenu(graph);
 
         this->m_engineSelectors.append(selector);
@@ -125,7 +183,7 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
     UIHelper::EnableCopyLabelContextMenu(this->ui->coreClockValueLabel);
     UIHelper::EnableCopyLabelContextMenu(this->ui->powerUsageValueLabel);
 
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->GpuTitleColor, 18, true);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->GpuTitleColor, 22);
     WidgetStyle::ApplyTextStyle(this->ui->copyBwLegendLabel, scheme->StatLabelColor);
 }
 
@@ -153,7 +211,7 @@ void GpuDetailWidget::SetGpu(int index)
 void GpuDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->GpuTitleColor, 18, true);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->GpuTitleColor, 22);
     WidgetStyle::ApplyTextStyle(this->ui->copyBwLegendLabel, scheme->StatLabelColor);
 
     auto applyGraph = [scheme](GraphWidget *graph)
@@ -209,7 +267,21 @@ void GpuDetailWidget::rebuildEngineSelectors()
 
         int engineIndex = this->m_selectedEngineBySlot[slot];
         if (engineIndex < 0 || engineIndex >= engineCount)
-            engineIndex = (engineCount > 0) ? (slot % engineCount) : -1;
+        {
+            // Default layout: Power usage, 3D / Copy, CUDA (when the GPU reports them).
+            static const char *kDefaultKeys[4] = { "power", "3d", "copy", "cuda" };
+            engineIndex = -1;
+            for (int i = 0; i < engineCount; ++i)
+            {
+                if (gpu.Engines.at(i)->Key == QLatin1String(kDefaultKeys[slot % 4]))
+                {
+                    engineIndex = i;
+                    break;
+                }
+            }
+            if (engineIndex < 0)
+                engineIndex = (engineCount > 0) ? (slot % engineCount) : -1;
+        }
 
         this->m_selectedEngineBySlot[slot] = engineIndex;
         if (engineIndex >= 0)
@@ -270,7 +342,9 @@ void GpuDetailWidget::onUpdated()
         GraphWidget *graph = this->m_engineGraphs.at(slot);
         QLabel *value = this->m_engineValueLabels.at(slot);
 
-        if (engineIndex >= 0)
+        if (engineIndex >= 0 && gpu.Engines.at(engineIndex)->Key == QLatin1String("power") && gpu.PowerUsageW >= 0.0)
+            value->setText(tr("%1 W").arg(QString::number(gpu.PowerUsageW, 'f', 0)));
+        else if (engineIndex >= 0)
             value->setText(QString::number(gpu.Engines.at(engineIndex)->Pct, 'f', 0) + "%");
         else
             value->setText("0%");
@@ -322,6 +396,11 @@ void GpuDetailWidget::bindEngineGraphSource(int slot)
         const GPU::GPUEngineInfo &engine = *gpu.Engines.at(engineIndex);
         graph->SetSeriesNames(engine.Label);
         graph->SetDataSource(engine.History, 100.0);
+        // Power graph: 100% = enforced power limit; tooltips also show watts.
+        if (engine.Key == QLatin1String("power") && gpu.PowerLimitW > 0.0)
+            graph->SetPercentTooltipAbsolute(gpu.PowerLimitW, tr("W"), 0);
+        else
+            graph->SetPercentTooltipAbsolute(0.0, QString());
     } else
     {
         graph->SetSeriesNames(tr("Value"));

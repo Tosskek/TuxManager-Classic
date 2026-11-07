@@ -33,13 +33,21 @@ using namespace Perf;
 MemoryDetailWidget::MemoryDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::MemoryDetailWidget)
 {
     this->ui->setupUi(this);
+    {
+        // Content sits ~20 screen pixels lower (12 px at the default UI scale).
+        QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setTop(m.top() + 12);
+        this->ui->verticalLayout->setContentsMargins(m);
+    }
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->statInUseValue, this->ui->statAvailValue, this->ui->statCachedValue, this->ui->statCompressedValue });
+    UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->graphWidget, 5000) }, 1);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 18);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->compositionLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 13);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->compositionLabel, scheme->StatLabelColor, 9);
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedDot, scheme->MemoryLegendUsedColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedLabel, scheme->MemoryLegendTextColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendCompressedDot, scheme->MemoryLegendCompressedColor, 8);
@@ -95,11 +103,11 @@ MemoryDetailWidget::~MemoryDetailWidget()
 void MemoryDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 18);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->compositionLabel, scheme->StatLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->MemoryTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->totalLabel, scheme->MemoryHeaderValueColor, 13);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->compositionLabel, scheme->StatLabelColor, 9);
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedDot, scheme->MemoryLegendUsedColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedLabel, scheme->MemoryLegendTextColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendCompressedDot, scheme->MemoryLegendCompressedColor, 8);

@@ -54,6 +54,7 @@ class GPU
             int             TemperatureC { -1 };
             int             CoreClockMHz { -1 };
             double          PowerUsageW { -1.0 };
+            double          PowerLimitW { -1.0 };   ///< Enforced board power limit, scales the power graph.
             qint64          MemUsedMiB { 0 };
             qint64          MemTotalMiB { 0 };
             qint64          SharedMemUsedMiB { 0 };

@@ -74,7 +74,13 @@ void MemoryBar::paintEvent(QPaintEvent * /*event*/)
     // Border
     p.setPen(QPen(scheme->MemoryBarBorderColor, 1));
     p.setBrush(Qt::NoBrush);
-    p.drawRect(this->rect().adjusted(0, 0, -1, -1));
+    {
+        const qreal px = 1.0 / qMax<qreal>(0.01, this->devicePixelRatioF());
+        QPen framePen = p.pen();
+        framePen.setWidthF(px);
+        p.setPen(framePen);
+        p.drawRect(QRectF(px / 2.0, px / 2.0, qMax<qreal>(0.0, this->width() - px), qMax<qreal>(0.0, this->height() - px)));
+    }
 }
 
 bool MemoryBar::event(QEvent *event)

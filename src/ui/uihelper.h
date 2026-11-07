@@ -31,6 +31,9 @@ class QAction;
 class QTimer;
 class QWidget;
 class QLabel;
+class QGridLayout;
+class QBoxLayout;
+class QLayout;
 
 namespace UIHelper
 {
@@ -69,6 +72,22 @@ namespace UIHelper
     void EnableCopyLabelContextMenu(QLabel *label);
     //! Adds a Copy graph action to an existing menu that copies the widget snapshot to the clipboard.
     QAction *AddCopyWidgetAction(QMenu *menu, QWidget *widget, const QString &text = QString());
+    //! Re-arranges a label/value stats grid (labels in even columns, values in odd ones)
+    //! into the classic look: the "big" values on the left as large numbers under
+    //! small grey captions, every other pair as a compact two-column table on the right.
+    //! Classic page proportions: graphs share only part of the height (by weight),
+    //! everything else keeps its natural size; bottomWeight > 0 leaves blank space at the bottom.
+    void ApplyClassicPageProportions(QBoxLayout *layout, const QList<QPair<QWidget *, int>> &graphWeights, int bottomWeight);
+    //! Classic page geometry: content 10% narrower than the page (right margin grows
+    //! with the page) and every registered graph keeps a fixed height/width ratio,
+    //! so proportions stay the same at any window size instead of padding with blank space.
+    void ApplyClassicPageGeometry(QWidget *page, const QList<QPair<QWidget *, double>> &graphRatios);
+    //! Draws a page's graph rows (graphs plus their caption / time-axis rows) narrower
+    //! than the page content by `fraction` (e.g. 0.10 = 10%); stats keep the full width.
+    //! Graph heights registered with ApplyClassicPageGeometry follow the narrower width.
+    void ApplyGraphRowsNarrower(QWidget *page, QBoxLayout *pageLayout, const QList<QWidget *> &graphs,
+                                const QList<QLayout *> &rows, double fraction);
+    void ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigValues, int bigColumns = 2);
 }
 
 #endif // UI_UIHELPER_H

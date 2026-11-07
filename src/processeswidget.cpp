@@ -24,6 +24,11 @@
 #include "runtaskdialog.h"
 #include "ui_processeswidget.h"
 #include "ui/uihelper.h"
+#include "ui/classicheaderview.h"
+#include "metrics.h"
+#include "system/cpu.h"
+#include "system/memory.h"
+#include "system/storage.h"
 
 #include <QAction>
 #include <QClipboard>
@@ -159,10 +164,31 @@ bool ProcessesWidget::selectProcessInTree(pid_t pid)
 
 void ProcessesWidget::setupTable()
 {
-    static constexpr int PROCESS_COLUMN_SCHEMA_VERSION = 2;
+    static constexpr int PROCESS_COLUMN_SCHEMA_VERSION = 3;
     const int savedProcessColumnSchemaVersion = CFG->ProcessColumnSchemaVersion;
     const bool resetProcessHeaderState = savedProcessColumnSchemaVersion < 1;
     const bool migrateProcessNameFirstLayout = savedProcessColumnSchemaVersion < 2;
+    // v3: classic column set (Name, Status, CPU, Memory, Disk) plus the new Disk column.
+    const bool applyClassicColumns = savedProcessColumnSchemaVersion < 3;
+    const auto classicLayout = [](QHeaderView *header)
+    {
+        using M = OS::ProcessModel;
+        for (int col = 0; col < M::ColCount; ++col)
+            header->setSectionHidden(col, true);
+        const int order[] = { M::ColName, M::ColState, M::ColCpu, M::ColMemRss, M::ColDisk };
+        int visual = 0;
+        for (int col : order)
+        {
+            header->setSectionHidden(col, false);
+            header->moveSection(header->visualIndex(col), visual++);
+        }
+        header->resizeSection(M::ColName, 280);
+        header->resizeSection(M::ColState, 110);
+        header->resizeSection(M::ColCpu, 80);
+        header->resizeSection(M::ColMemRss, 95);
+        header->resizeSection(M::ColDisk, 95);
+        header->setSortIndicator(M::ColCpu, Qt::DescendingOrder);
+    };
     if (resetProcessHeaderState && CFG->ProcessListSortColumn > OS::ProcessModel::ColMemVirt)
         CFG->ProcessListSortColumn += 3;
 
@@ -193,7 +219,61 @@ void ProcessesWidget::setupTable()
             vl->insertWidget(tablePos + 1, this->m_treeView);
     }
 
+    // Classic two-line headers: totals for CPU / Memory above the captions.
+    {
+        const auto totalProvider = [](int logical) -> QString
+        {
+            if (logical == OS::ProcessModel::ColCpu)
+                return QString::number(Metrics::GetCPU()->CpuPercent(), 'f', 0) + "%";
+            if (logical == OS::ProcessModel::ColMemRss)
+            {
+                const qint64 total = Metrics::GetMemory()->MemTotalKb();
+                const qint64 used = Metrics::GetMemory()->MemUsedKb();
+                return QString::number(total > 0 ? qRound(100.0 * used / total) : 0) + "%";
+            }
+            if (logical == OS::ProcessModel::ColDisk)
+            {
+                double busiest = 0.0;
+                Storage *storage = Metrics::GetStorage();
+                for (int i = 0; i < storage->DiskCount(); ++i)
+                    busiest = qMax(busiest, storage->FromIndex(i).ActivePct);
+                return QString::number(busiest, 'f', 0) + "%";
+            }
+            return QString();
+        };
+        const QSet<int> numeric = { OS::ProcessModel::ColPid, OS::ProcessModel::ColCpu, OS::ProcessModel::ColMemRss,
+                                    OS::ProcessModel::ColMemVirt, OS::ProcessModel::ColMemShared, OS::ProcessModel::ColMemText,
+                                    OS::ProcessModel::ColMemData, OS::ProcessModel::ColIoReads, OS::ProcessModel::ColIoWrites,
+                                    OS::ProcessModel::ColIoReadsPerSec, OS::ProcessModel::ColIoWritesPerSec,
+                                    OS::ProcessModel::ColThreads, OS::ProcessModel::ColPriority, OS::ProcessModel::ColNice,
+                                    OS::ProcessModel::ColDisk };
+
+        ClassicHeaderView *tableHeader = new ClassicHeaderView(tv);
+        tableHeader->SetTotalProvider(totalProvider);
+        tableHeader->SetRightAlignedSections(numeric);
+        tv->setHorizontalHeader(tableHeader);
+
+        ClassicHeaderView *treeHeader = new ClassicHeaderView(this->m_treeView);
+        treeHeader->SetTotalProvider(totalProvider);
+        treeHeader->SetRightAlignedSections(numeric);
+        this->m_treeView->setHeader(treeHeader);
+
+        connect(Metrics::Get(), &Metrics::updated, this, [tableHeader, treeHeader]()
+        {
+            tableHeader->viewport()->update();
+            treeHeader->viewport()->update();
+        });
+    }
+
+    // Flat rows: one line per process, no zebra striping, a little breathing room.
+    tv->setWordWrap(false);
+    tv->setAlternatingRowColors(false);
+    tv->setTextElideMode(Qt::ElideRight);
+    tv->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    tv->verticalHeader()->setDefaultSectionSize(tv->fontMetrics().height() + 10);
+
     tv->setModel(this->m_proxy);
+    tv->setSortingEnabled(true);
     tv->sortByColumn(CFG->ProcessListSortColumn, static_cast<Qt::SortOrder>(CFG->ProcessListSortOrder));
 
     QHeaderView *hv = tv->horizontalHeader();
@@ -264,12 +344,20 @@ void ProcessesWidget::setupTable()
         // lead both process views, then preserve any column order chosen by the user.
         hv->moveSection(hv->visualIndex(OS::ProcessModel::ColName), 0);
     }
+    if (applyClassicColumns)
+    {
+        classicLayout(hv);
+        tv->sortByColumn(OS::ProcessModel::ColCpu, Qt::DescendingOrder);
+        CFG->ProcessListSortColumn = OS::ProcessModel::ColCpu;
+        CFG->ProcessListSortOrder = static_cast<int>(Qt::DescendingOrder);
+    }
     this->m_tableHeaderPersistenceEnabled = true;
 
     this->m_treeView->setModel(this->m_treeProxy);
     this->m_treeView->setSortingEnabled(true);
     this->m_treeView->sortByColumn(CFG->ProcessListSortColumn, static_cast<Qt::SortOrder>(CFG->ProcessListSortOrder));
-    this->m_treeView->setAlternatingRowColors(true);
+    this->m_treeView->setAlternatingRowColors(false);
+    this->m_treeView->setWordWrap(false);
     this->m_treeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     this->m_treeView->setSelectionBehavior(QAbstractItemView::SelectRows);
     this->m_treeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -330,6 +418,13 @@ void ProcessesWidget::setupTable()
     if (migrateProcessNameFirstLayout)
         treeHeader->moveSection(treeHeader->visualIndex(OS::ProcessTreeModel::ColName), 0);
     this->m_treeView->setColumnWidth(OS::ProcessTreeModel::ColPid, 65);
+    if (applyClassicColumns)
+    {
+        classicLayout(treeHeader);
+        this->m_treeView->sortByColumn(OS::ProcessTreeModel::ColCpu, Qt::DescendingOrder);
+        // Grouped (tree) view by default so kernel workers fold under kthreadd.
+        CFG->ProcessTreeView = true;
+    }
     this->syncAllProcessColumnVisibility();
     this->m_treeHeaderPersistenceEnabled = true;
     if (savedProcessColumnSchemaVersion < PROCESS_COLUMN_SCHEMA_VERSION)
@@ -599,7 +694,8 @@ bool ProcessesWidget::anyIOMetricsColumnVisible() const
     return !tableHeader->isSectionHidden(OS::ProcessModel::ColIoReads)
            || !tableHeader->isSectionHidden(OS::ProcessModel::ColIoWrites)
            || !tableHeader->isSectionHidden(OS::ProcessModel::ColIoReadsPerSec)
-           || !tableHeader->isSectionHidden(OS::ProcessModel::ColIoWritesPerSec);
+           || !tableHeader->isSectionHidden(OS::ProcessModel::ColIoWritesPerSec)
+           || !tableHeader->isSectionHidden(OS::ProcessModel::ColDisk);
 }
 
 void ProcessesWidget::updateIOMetricsEnabledState(bool triggerImmediateRefresh)
@@ -1026,6 +1122,11 @@ void ProcessesWidget::restoreTreeStateDeferred(const QSet<pid_t> &expandedPids,
     QTimer::singleShot(0, this, [this, expandedPids, treeSelection, treeCurrentPid, treeScroll]()
     {
         this->restoreExpandedTreePids(QModelIndex(), expandedPids);
+        if (!this->m_treeDefaultExpansionDone && this->m_treeModel->rowCount() > 0)
+        {
+            // Groups start collapsed, as in the classic task list.
+            this->m_treeDefaultExpansionDone = true;
+        }
 
         if (QItemSelectionModel *sel = this->m_treeView->selectionModel())
         {

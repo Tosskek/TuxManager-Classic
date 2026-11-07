@@ -53,6 +53,7 @@ namespace OS
                 ColPriority,
                 ColNice,
                 ColCmdline,
+                ColDisk,           ///< Combined disk read+write rate
                 ColCount
             };
 

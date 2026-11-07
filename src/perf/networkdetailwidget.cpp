@@ -36,13 +36,29 @@ using namespace Perf;
 NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::NetworkDetailWidget)
 {
     this->ui->setupUi(this);
+    {
+        // Content sits ~20 screen pixels lower (12 px at the default UI scale).
+        QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setTop(m.top() + 12);
+        this->ui->verticalLayout->setContentsMargins(m);
+    }
+    // IPv6 addresses are not shown on this page.
+    this->ui->statsGrid->removeWidget(this->ui->ipv6Label);
+    this->ui->statsGrid->removeWidget(this->ui->ipv6ValueLabel);
+    this->ui->ipv6Label->hide();
+    this->ui->ipv6ValueLabel->hide();
+    // Send above Receive in one column, details table in the second.
+    UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->sendValueLabel, this->ui->receiveValueLabel }, 1);
+    UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout, { this->ui->throughputGraphWidget },
+                                     { this->ui->headerLayout, this->ui->throughputLabelLayout, this->ui->timeAxisLayout }, 0.10);
+    UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->throughputGraphWidget, 5000) }, 1);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->NetworkTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->throughputGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->throughputLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->NetworkTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->throughputGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->throughputLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {
@@ -84,11 +100,11 @@ NetworkDetailWidget::~NetworkDetailWidget()
 void NetworkDetailWidget::ApplyColorScheme()
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
-    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->NetworkTitleColor, 18, true);
-    WidgetStyle::ApplyTextStyle(this->ui->throughputGraphMaxLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->throughputLabel, scheme->StatLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 8);
-    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 8);
+    WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->NetworkTitleColor, 22);
+    WidgetStyle::ApplyTextStyle(this->ui->throughputGraphMaxLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->throughputLabel, scheme->StatLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
+    WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
 
     if (QGridLayout *statsGrid = this->findChild<QGridLayout *>("statsGrid"))
     {
@@ -111,16 +127,13 @@ void NetworkDetailWidget::ApplyColorScheme()
 
 void NetworkDetailWidget::applyTransferUnitMode()
 {
-    this->ui->throughputGraphWidget->SetValueFormat(CFG->PerfNetworkUseBits
-                                                    ? GraphWidget::ValueFormat::BitsPerSec
-                                                    : GraphWidget::ValueFormat::BytesPerSec);
+    // Network speeds are always shown in MB/s so the unit never jumps around.
+    this->ui->throughputGraphWidget->SetValueFormat(GraphWidget::ValueFormat::MegabytesPerSec);
 }
 
 QString NetworkDetailWidget::formatTransferRate(double bytesPerSec) const
 {
-    return CFG->PerfNetworkUseBits
-           ? Misc::FormatBitsPerSecond(bytesPerSec)
-           : Misc::FormatBytesPerSecond(bytesPerSec);
+    return Misc::FormatMegabytesPerSecond(bytesPerSec);
 }
 
 void NetworkDetailWidget::SetNetwork(int index)
@@ -131,7 +144,9 @@ void NetworkDetailWidget::SetNetwork(int index)
     {
         const Network::NetworkInfo &network = Metrics::GetNetwork()->FromIndex(this->m_networkIndex);
 
-        this->ui->titleLabel->setText(tr("NIC (%1)").arg(network.Name));
+        this->ui->titleLabel->setText(Metrics::GetNetwork()->NetworkCount() == 1
+                                      ? tr("Network")
+                                      : tr("Network (%1)").arg(network.Name));
         this->ui->adapterValueLabel->setText(network.Name);
         this->ui->typeValueLabel->setText(network.Type);
         this->ui->speedValueLabel->setText(network.LinkSpeedMbps > 0 ? QString::number(network.LinkSpeedMbps) + tr(" Mbps") : tr("Unknown"));
@@ -164,18 +179,6 @@ void NetworkDetailWidget::onGraphContextMenuRequested(const QPoint &pos)
     QMenu menu(this);
     menu.setTitle(tr("Network graph options"));
 
-    QAction *bitsAction = menu.addAction(tr("Show speeds in bits"));
-    bitsAction->setCheckable(true);
-    bitsAction->setChecked(CFG->PerfNetworkUseBits);
-
-    QAction *bytesAction = menu.addAction(tr("Show speeds in bytes"));
-    bytesAction->setCheckable(true);
-    bytesAction->setChecked(!CFG->PerfNetworkUseBits);
-
-    connect(bitsAction, &QAction::triggered, this, &NetworkDetailWidget::onShowBitsTriggered);
-    connect(bytesAction, &QAction::triggered, this, &NetworkDetailWidget::onShowBytesTriggered);
-
-    menu.addSeparator();
     UIHelper::AddGraphContextMenuItems(&menu, this->ui->throughputGraphWidget);
 
     menu.exec(this->ui->throughputGraphWidget->mapToGlobal(pos));

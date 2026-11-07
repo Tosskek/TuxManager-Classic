@@ -147,7 +147,10 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     if (this->m_gridEnabled)
     {
-        p.setPen(QPen(scheme->GraphGridColor, 1));
+        // Grid lines are a pale tint of the graph's own line colour.
+        QColor grid = this->m_lineColor;
+        grid.setAlpha(scheme->DarkMode ? 90 : 38);
+        p.setPen(QPen(grid, 1));
 
         // Denser grid on larger widgets while keeping existing configured minimum.
         const int targetGridPxX = 80;
@@ -247,16 +250,24 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
     }
 
     // The line itself
-    p.setPen(QPen(this->m_lineColor, 1.5));
+    p.setPen(QPen(this->m_lineColor, 1.0));
     p.setBrush(Qt::NoBrush);
     p.drawPath(path);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Border
     ////////////////////////////////////////////////////////////////////////////////////////////////////
-    p.setPen(QPen(this->m_lineColor.darker(150), 1));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(QRectF(0.5, 0.5, qMax(0.0, right - 1.0), qMax(0.0, bottom - 1.0)));
+    p.setRenderHint(QPainter::Antialiasing, false);
+    {
+        // Align the frame to physical pixels: with a fractional UI scale an
+        // integer logical rect lands between device pixels and the top/right
+        // edges get clipped away.
+        const qreal px = 1.0 / qMax<qreal>(0.01, this->devicePixelRatioF());
+        p.setPen(QPen(this->m_lineColor, px));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(QRectF(px / 2.0, px / 2.0, qMax<qreal>(0.0, w - px), qMax<qreal>(0.0, h - px)));
+    }
+    p.setRenderHint(QPainter::Antialiasing, true);
 
     if (!this->m_overlayText.isEmpty())
     {
@@ -385,6 +396,8 @@ QString GraphWidget::formatValue(double v) const
             return Misc::FormatBytesPerSecond(v);
         case ValueFormat::BitsPerSec:
             return Misc::FormatBitsPerSecond(v);
+        case ValueFormat::MegabytesPerSec:
+            return Misc::FormatMegabytesPerSecond(v);
         case ValueFormat::Raw:
             return QString::number(v, 'f', 2);
         case ValueFormat::Auto:

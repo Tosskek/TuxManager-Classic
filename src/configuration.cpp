@@ -113,8 +113,6 @@ void Configuration::Load()
             this->GpuEngineSelectorIndices.append(v.toInt());
     }
 
-    while (this->GpuEngineSelectorIndices.size() < 4)
-        this->GpuEngineSelectorIndices.append(this->GpuEngineSelectorIndices.size());
     if (this->GpuEngineSelectorIndices.size() > 4)
         this->GpuEngineSelectorIndices.resize(4);
     this->CpuGraphMode = s.value("Performance/CpuGraphMode", this->CpuGraphMode).toInt();
