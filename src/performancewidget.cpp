@@ -61,7 +61,7 @@ namespace
 
             void paintEvent(QPaintEvent *) override
             {
-                // Fixed separator line between side panel and detail pages (3px thick)
+                // Fixed separator line between side panel and detail pages (2px thick)
                 QPainter painter(this);
                 const QColor lineColor = ColorScheme::DetectDarkMode()
                     ? QColor(0x55, 0x55, 0x55)
@@ -75,7 +75,7 @@ namespace
         public:
             explicit PerformanceSplitter(QWidget *parent = nullptr) : QSplitter(Qt::Horizontal, parent)
             {
-                this->setHandleWidth(3);
+                this->setHandleWidth(2);
             }
 
         protected:
