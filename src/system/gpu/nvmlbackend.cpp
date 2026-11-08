@@ -310,7 +310,7 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         if (hasUtil)
         {
             double graphicsUtil = util.gpu;
-            double computeUtil = util.gpu;
+            double computeUtil = 0.0;
 
             if (pNvmlDeviceGetGraphicsRunningProcesses
                 && pNvmlDeviceGetComputeRunningProcesses
@@ -336,28 +336,55 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
                 const QSet<unsigned int> gfxPids = collectPids(pNvmlDeviceGetGraphicsRunningProcesses);
                 const QSet<unsigned int> compPids = collectPids(pNvmlDeviceGetComputeRunningProcesses);
 
-                unsigned int procUtilCount = 32;
+                unsigned int procUtilCount = 64;
                 QVector<NvmlProcessUtilizationSample> procUtil(static_cast<int>(procUtilCount));
                 NvmlReturn ret = pNvmlDeviceGetProcessUtilization(dev, procUtil.data(), &procUtilCount, 0);
-                if (ret != NVML_SUCCESS && procUtilCount > 32 && procUtilCount <= 1024)
+                if (ret != NVML_SUCCESS && procUtilCount > 64 && procUtilCount <= 1024)
                 {
                     procUtil.resize(static_cast<int>(procUtilCount));
                     ret = pNvmlDeviceGetProcessUtilization(dev, procUtil.data(), &procUtilCount, 0);
                 }
-                if (ret == NVML_SUCCESS)
+                if (ret == NVML_SUCCESS && procUtilCount > 0)
                 {
-                    double sumGfx = 0.0;
+                    uint64_t maxTs = 0;
+                    for (unsigned int p = 0; p < procUtilCount; ++p)
+                    {
+                        if (procUtil[static_cast<int>(p)].timeStamp > maxTs)
+                            maxTs = procUtil[static_cast<int>(p)].timeStamp;
+                    }
+
+                    // Only consider fresh samples within 1.5s of the newest sample
+                    const uint64_t kMaxAgeUs = 1500000;
                     double sumComp = 0.0;
+                    double sumGfx = 0.0;
                     for (unsigned int p = 0; p < procUtilCount; ++p)
                     {
                         const auto &sample = procUtil[static_cast<int>(p)];
+                        if (maxTs > sample.timeStamp && (maxTs - sample.timeStamp) > kMaxAgeUs)
+                            continue;
+
                         if (compPids.contains(sample.pid) && !gfxPids.contains(sample.pid))
                             sumComp += sample.smUtil;
                         else
                             sumGfx += sample.smUtil;
                     }
-                    graphicsUtil = qBound(0.0, sumGfx, 100.0);
-                    computeUtil = qBound(0.0, sumComp, 100.0);
+
+                    if (sumComp > 0.0)
+                    {
+                        // Dedicated compute workload active: apportion hardware SM util
+                        const double total = sumGfx + sumComp;
+                        if (total > 0.0)
+                        {
+                            graphicsUtil = qBound(0.0, util.gpu * (sumGfx / total), 100.0);
+                            computeUtil = qBound(0.0, util.gpu * (sumComp / total), 100.0);
+                        }
+                    }
+                    else
+                    {
+                        // Standard graphics load: 3D engine directly reflects hardware SM utilization
+                        graphicsUtil = util.gpu;
+                        computeUtil = 0.0;
+                    }
                 }
             }
 
