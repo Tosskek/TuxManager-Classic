@@ -96,19 +96,14 @@ void SidePanelItem::paintEvent(QPaintEvent *event)
     const QRect r = this->rect();
 
     // Background
-    QColor bg;
+    p.fillRect(r, scheme->SidePanelItemBackgroundColor);
     if (this->m_selected)
     {
-        bg = scheme->SidePanelItemSelectedBackgroundColor;
+        p.fillRect(r.adjusted(0, 0, -4, 0), scheme->SidePanelItemSelectedBackgroundColor);
     } else if (this->m_hovered)
     {
-        bg = scheme->SidePanelItemHoverBackgroundColor;
-    } else
-    {
-        bg = scheme->SidePanelItemBackgroundColor;
+        p.fillRect(r.adjusted(0, 0, -4, 0), scheme->SidePanelItemHoverBackgroundColor);
     }
-
-    p.fillRect(r, bg);
 
     // Title (large) and subtitle (one or more lines) to the right of the graph.
     QFont titleFont = ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 14.5);

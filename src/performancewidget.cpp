@@ -337,18 +337,8 @@ void PerformanceWidget::onProviderUpdated()
         this->m_cpuItem->Update(cpuSub);
 
     // Update Memory side panel item
-    const qint64 used  = Metrics::GetMemory()->MemUsedKb();
-    const qint64 total = Metrics::GetMemory()->MemTotalKb();
-    const int    pct     = total > 0
-                           ? static_cast<int>(static_cast<double>(used) / total * 100.0)
-                           : 0;
-    // "6.2/62.7 GB (9%)": the unit is written once when both values share it.
-    QString usedText = Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, used)), 1);
-    const QString totalText = Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, total)), 1);
-    const QString usedUnit = usedText.section(' ', -1);
-    if (usedText.contains(' ') && usedUnit == totalText.section(' ', -1))
-        usedText = usedText.section(' ', 0, -2);
-    const QString memSub = QString("%1/%2 (%3%)").arg(usedText, totalText, QString::number(pct));
+    const qint64 used = Metrics::GetMemory()->MemUsedKb();
+    const QString memSub = Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, used)), 1);
     if (CFG->PerfShowMemory)
         this->m_memoryItem->Update(memSub);
 
