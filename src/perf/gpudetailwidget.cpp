@@ -179,7 +179,6 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
     UIHelper::EnableCopyLabelContextMenu(this->ui->dedicatedMemValueLabel);
     UIHelper::EnableCopyLabelContextMenu(this->ui->sharedMemValueLabel);
     UIHelper::EnableCopyLabelContextMenu(this->ui->driverValueLabel);
-    UIHelper::EnableCopyLabelContextMenu(this->ui->backendValueLabel);
     UIHelper::EnableCopyLabelContextMenu(this->ui->coreClockValueLabel);
     UIHelper::EnableCopyLabelContextMenu(this->ui->powerUsageValueLabel);
 
@@ -323,7 +322,6 @@ void GpuDetailWidget::onUpdated()
                                            .arg(Misc::FormatMiB(static_cast<quint64>(qMax<qint64>(0, sharedUsedMiB)), 1))
                                            .arg(Misc::FormatMiB(static_cast<quint64>(qMax<qint64>(0, sharedTotalMiB)), 1)));
     this->ui->driverValueLabel->setText(gpu.DriverVersion);
-    this->ui->backendValueLabel->setText(gpu.Backend);
     this->ui->coreClockLabel->setVisible(hasCoreClock);
     this->ui->coreClockValueLabel->setVisible(hasCoreClock);
     if (hasCoreClock)
