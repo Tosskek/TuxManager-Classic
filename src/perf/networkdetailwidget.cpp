@@ -37,11 +37,11 @@ NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(
 {
     this->ui->setupUi(this);
     {
-        // Content sits ~20 screen pixels lower (12 px at the default UI scale), with symmetrical 10px left/right gap.
+        // Content margins: +16px top (+12 + 4), +14px left/right (+10 + 4).
         QMargins m = this->ui->verticalLayout->contentsMargins();
-        m.setLeft(m.left() + 10);
-        m.setRight(m.right() + 10);
-        m.setTop(m.top() + 12);
+        m.setLeft(m.left() + 14);
+        m.setRight(m.right() + 14);
+        m.setTop(m.top() + 16);
         this->ui->verticalLayout->setContentsMargins(m);
     }
     // IPv6 addresses are not shown on this page.
