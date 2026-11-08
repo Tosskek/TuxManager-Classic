@@ -68,19 +68,21 @@ double CPU::CoreCurrentMhz(int i) const
 
 // Parse one "cpu..." line from /proc/stat — returns total jiffies and writes
 // idle and kernel jiffies via output parameters.
-quint64 CPU::parseCpuLine(const QList<QByteArray> &parts, quint64 &outIdle, quint64 &outKernel)
+quint64 CPU::parseCpuLine(const char *p, quint64 &outIdle, quint64 &outKernel)
 {
-    // Fields (1-indexed after the label):
-    // 1:user 2:nice 3:system 4:idle 5:iowait 6:irq 7:softirq 8:steal
-    // guest/guestnice are already counted in user/nice — skip them
-    const quint64 user    = parts.value(1).toULongLong();
-    const quint64 nice    = parts.value(2).toULongLong();
-    const quint64 system  = parts.value(3).toULongLong();
-    const quint64 idle    = parts.value(4).toULongLong();
-    const quint64 iowait  = parts.value(5).toULongLong();
-    const quint64 irq     = parts.value(6).toULongLong();
-    const quint64 softirq = parts.value(7).toULongLong();
-    const quint64 steal   = parts.value(8).toULongLong();
+    // Skip leading whitespace to reach first number
+    while (*p && (*p == ' ' || *p == '\t'))
+        ++p;
+
+    char *end = nullptr;
+    const quint64 user    = strtoull(p, &end, 10); p = end;
+    const quint64 nice    = strtoull(p, &end, 10); p = end;
+    const quint64 system  = strtoull(p, &end, 10); p = end;
+    const quint64 idle    = strtoull(p, &end, 10); p = end;
+    const quint64 iowait  = strtoull(p, &end, 10); p = end;
+    const quint64 irq     = strtoull(p, &end, 10); p = end;
+    const quint64 softirq = strtoull(p, &end, 10); p = end;
+    const quint64 steal   = strtoull(p, &end, 10); p = end;
 
     outIdle   = idle + iowait;
     outKernel = system + irq + softirq;
@@ -89,29 +91,28 @@ quint64 CPU::parseCpuLine(const QList<QByteArray> &parts, quint64 &outIdle, quin
 
 bool CPU::Sample()
 {
-    QFile f("/proc/stat");
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    FILE *f = ::fopen("/proc/stat", "r");
+    if (!f)
         return false;
 
+    char line[512];
     int coreIdx = 0;
 
-    for (;;)
+    while (::fgets(line, sizeof(line), f))
     {
-        const QByteArray raw = f.readLine();
-        if (raw.isNull())
-            break;
-
-        const QList<QByteArray> parts = raw.simplified().split(' ');
-        if (parts.isEmpty())
-            continue;
-
-        const QByteArray key = parts.at(0);
-
-        if (key == "cpu")
+        if (line[0] != 'c' || line[1] != 'p' || line[2] != 'u')
         {
-            // Aggregate line
+            if (coreIdx > 0)
+                break; // past all cpu lines
+            continue;
+        }
+
+        const char *p = line + 3;
+        if (*p == ' ' || *p == '\t')
+        {
+            // Aggregate line "cpu ..."
             quint64 idleAll = 0, kernelAll = 0;
-            const quint64 total = parseCpuLine(parts, idleAll, kernelAll);
+            const quint64 total = parseCpuLine(p, idleAll, kernelAll);
 
             const quint64 dTotal  = (total     > this->m_prevCpuTotal ) ? (total     - this->m_prevCpuTotal ) : 0;
             const quint64 dIdle   = (idleAll   > this->m_prevCpuIdle  ) ? (idleAll   - this->m_prevCpuIdle  ) : 0;
@@ -129,15 +130,19 @@ bool CPU::Sample()
             this->m_prevCpuKernel = kernelAll;
             this->m_cpuHistory.Push(pct);
             this->m_cpuKernelHistory.Push(kpct);
-        } else if (key.startsWith("cpu") && key.size() > 3)
+        }
+        else if (*p >= '0' && *p <= '9')
         {
             // Per-core line: "cpu0", "cpu1", ...
+            while (*p >= '0' && *p <= '9')
+                ++p;
+
             if (coreIdx >= static_cast<int>(this->m_cores.size()))
                 this->m_cores.push_back(std::make_unique<CoreSample>());
 
             CoreSample &c = *this->m_cores[coreIdx];
             quint64 idleC = 0, kernelC = 0;
-            const quint64 totalC = parseCpuLine(parts, idleC, kernelC);
+            const quint64 totalC = parseCpuLine(p, idleC, kernelC);
 
             const quint64 dTotal  = (totalC  > c.PrevTotal ) ? (totalC  - c.PrevTotal ) : 0;
             const quint64 dIdle   = (idleC   > c.PrevIdle  ) ? (idleC   - c.PrevIdle  ) : 0;
@@ -156,13 +161,10 @@ bool CPU::Sample()
             c.History.Push(pct);
             c.KernelHistory.Push(kpct);
             ++coreIdx;
-        } else if (coreIdx > 0)
-        {
-            break;   // past cpu lines — stop reading for efficiency
         }
     }
 
-    f.close();
+    ::fclose(f);
 
     this->sampleCpuTemperature();
     this->readCurrentFreq();

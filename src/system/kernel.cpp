@@ -17,8 +17,9 @@
  */
 
 #include "kernel.h"
-#include <QDir>
-#include <QFile>
+#include <dirent.h>
+#include <stdio.h>
+#include <algorithm>
 
 Kernel::Kernel()
 {
@@ -33,21 +34,42 @@ bool Kernel::Sample()
 
 void Kernel::sampleProcessStats()
 {
-    int procs = 0, threads = 0;
-    const QDir procDir("/proc");
-    for (const QString &entry : procDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+    int procs = 0;
+    DIR *procDir = ::opendir("/proc");
+    if (procDir)
     {
-        bool ok;
-        entry.toInt(&ok);
-        if (!ok)
-            continue;
-        ++procs;
-        // Each thread appears as a subdirectory entry under /proc/<pid>/task/
-        const QDir taskDir(QString("/proc/%1/task").arg(entry));
-        // count() includes "." and ".." so subtract 2
-        threads += static_cast<int>(taskDir.count()) - 2;
+        while (struct dirent *entry = ::readdir(procDir))
+        {
+            if (entry->d_name[0] >= '0' && entry->d_name[0] <= '9')
+            {
+                bool isPid = true;
+                for (const char *p = entry->d_name + 1; *p; ++p)
+                {
+                    if (*p < '0' || *p > '9')
+                    {
+                        isPid = false;
+                        break;
+                    }
+                }
+                if (isPid)
+                    ++procs;
+            }
+        }
+        ::closedir(procDir);
     }
+
+    int threads = 0;
+    FILE *f = ::fopen("/proc/loadavg", "r");
+    if (f)
+    {
+        int running = 0;
+        // Use %*s for the three load averages so locale decimal points (e.g. uk_UA comma) don't break parsing
+        if (::fscanf(f, "%*s %*s %*s %d/%d", &running, &threads) != 2)
+            threads = 0;
+        ::fclose(f);
+    }
+
     this->m_processCount = procs;
-    this->m_threadCount  = qMax(0, threads);
+    this->m_threadCount  = std::max(0, threads);
 }
 

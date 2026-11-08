@@ -240,19 +240,23 @@ void Storage::refreshDisks(const QSet<QString> &measurableDevices)
         if (name.isEmpty())
             continue;
 
-        const QString model = Misc::ReadFile(QString("/sys/class/block/%1/device/model").arg(name));
-        d->Model = model.isEmpty() ? QObject::tr("Unknown device") : model;
+        if (d->Model.isEmpty())
+        {
+            const QString model = Misc::ReadFile(QString("/sys/class/block/%1/device/model").arg(name));
+            d->Model = model.isEmpty() ? QObject::tr("Unknown device") : model;
 
-        const QString rotational = Misc::ReadFile(QString("/sys/class/block/%1/queue/rotational").arg(name));
-        if (rotational == "1")
-            d->Type = "HDD";
-        else if (rotational == "0")
-            d->Type = "SSD";
-        else
-            d->Type = QObject::tr("Unknown");
+            const QString rotational = Misc::ReadFile(QString("/sys/class/block/%1/queue/rotational").arg(name));
+            if (rotational == "1")
+                d->Type = "HDD";
+            else if (rotational == "0")
+                d->Type = "SSD";
+            else
+                d->Type = QObject::tr("Unknown");
 
-        const qint64 sizeSecs = Misc::ReadFile(QString("/sys/class/block/%1/size").arg(name)).toLongLong();
-        d->CapacityBytes = qMax<qint64>(0, sizeSecs) * 512LL;
+            const qint64 sizeSecs = Misc::ReadFile(QString("/sys/class/block/%1/size").arg(name)).toLongLong();
+            d->CapacityBytes = qMax<qint64>(0, sizeSecs) * 512LL;
+        }
+
         d->FormattedBytes = qMax<qint64>(0, formattedByBase.value(name, 0));
         d->IsSystemDisk = systemByBase.value(name, false);
         d->HasSwapDevice = swapDeviceByBase.value(name, false);
@@ -261,8 +265,8 @@ void Storage::refreshDisks(const QSet<QString> &measurableDevices)
 
 bool Storage::Sample()
 {
-    QFile f("/proc/diskstats");
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    FILE *f = ::fopen("/proc/diskstats", "r");
+    if (!f)
         return false;
 
     struct DiskCounters
@@ -274,31 +278,39 @@ bool Storage::Sample()
     QHash<QString, DiskCounters> countersByName;
     QSet<QString> measurableDevices;
 
-    for (;;)
+    char line[512];
+    while (::fgets(line, sizeof(line), f))
     {
-        const QByteArray line = f.readLine();
-        if (line.isNull())
-            break;
-        const QList<QByteArray> parts = line.simplified().split(' ');
-        if (parts.size() < 14)
+        char devNameBuf[64] = {0};
+        quint64 readSecs = 0, writeSecs = 0, ioMs = 0;
+        if (::sscanf(line, "%*u %*u %63s %*u %*u %llu %*u %*u %*u %llu %*u %*u %llu",
+                     devNameBuf, &readSecs, &writeSecs, &ioMs) != 4)
             continue;
 
         DiskCounters c;
-        c.readSectors  = parts.at(5).toULongLong();
-        c.writeSectors = parts.at(9).toULongLong();
-        c.ioMs         = parts.at(12).toULongLong();
-        const QString devName = QString::fromUtf8(parts.at(2));
+        c.readSectors  = readSecs;
+        c.writeSectors = writeSecs;
+        c.ioMs         = ioMs;
+        const QString devName = QString::fromLatin1(devNameBuf);
         countersByName.insert(devName, c);
         measurableDevices.insert(devName);
     }
-    f.close();
-
-    this->refreshDisks(measurableDevices);
+    ::fclose(f);
 
     if (!this->m_diskTimer.isValid())
         this->m_diskTimer.start();
 
     const qint64 nowMs = this->m_diskTimer.elapsed();
+    const bool devicesChanged = (measurableDevices != this->m_prevMeasurableDevices);
+    const bool shouldRefresh = this->m_disks.empty() || devicesChanged || (this->m_lastRefreshMs <= 0) || (nowMs - this->m_lastRefreshMs > 15000);
+
+    if (shouldRefresh)
+    {
+        this->refreshDisks(measurableDevices);
+        this->m_prevMeasurableDevices = measurableDevices;
+        this->m_lastRefreshMs = nowMs;
+    }
+
     const qint64 dtMs = (this->m_prevDiskSampleMs > 0) ? (nowMs - this->m_prevDiskSampleMs) : 0;
     this->m_prevDiskSampleMs = nowMs;
 

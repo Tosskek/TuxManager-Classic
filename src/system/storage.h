@@ -78,6 +78,8 @@ class Storage
         DiskInfo            m_nullDisk;
         QElapsedTimer       m_diskTimer;
         qint64              m_prevDiskSampleMs { 0 };
+        QSet<QString>       m_prevMeasurableDevices;
+        qint64              m_lastRefreshMs { 0 };
 };
 
 #endif // STORAGE_H

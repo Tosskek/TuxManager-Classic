@@ -65,7 +65,7 @@ class CPU
             HistoryBuffer   KernelHistory { TUX_MANAGER_HISTORY_SIZE };
         };
 
-        static quint64 parseCpuLine(const QList<QByteArray> &parts,  quint64 &outIdle, quint64 &outKernel);
+        static quint64 parseCpuLine(const char *p, quint64 &outIdle, quint64 &outKernel);
 
         void readCpuMetadata();
         void detectCpuFreqSource();
