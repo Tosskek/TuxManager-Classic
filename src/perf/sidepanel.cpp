@@ -146,14 +146,14 @@ void SidePanel::SetItemVisible(SidePanelItem *item, bool visible)
 
 bool SidePanel::IsItemVisible(SidePanelItem *item) const
 {
-    return item && item->isVisible();
+    return item && !item->isHidden();
 }
 
 SidePanelItem *SidePanel::FirstVisibleItem() const
 {
     for (SidePanelItem *item : this->m_items)
     {
-        if (item && item->isVisible())
+        if (item && !item->isHidden())
             return item;
     }
     return nullptr;

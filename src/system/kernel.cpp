@@ -20,7 +20,10 @@
 #include <QDir>
 #include <QFile>
 
-Kernel::Kernel() {}
+Kernel::Kernel()
+{
+    this->sampleProcessStats();
+}
 
 bool Kernel::Sample()
 {
