@@ -43,9 +43,10 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
 {
     this->ui->setupUi(this);
     {
-        // Content sits ~25 screen pixels further right and ~20 lower (15 / 12 px at the default UI scale).
+        // Content sits ~25 screen pixels further right and ~20 lower (15 / 12 px at the default UI scale), symmetrical on left and right.
         QMargins m = this->ui->verticalLayout->contentsMargins();
         m.setLeft(m.left() + 15);
+        m.setRight(m.right() + 15);
         m.setTop(m.top() + 12);
         this->ui->verticalLayout->setContentsMargins(m);
     }
@@ -70,11 +71,6 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
     this->ui->dedicatedMemLabel->hide();
     this->ui->dedicatedMemValueLabel->hide();
     UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->utilValueLabel, this->ui->gpuMemValueLabel });
-    // Graph rows are drawn 10% narrower than the page; their heights follow.
-    UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout,
-        { this->ui->engineAreaContainer, this->ui->dedicatedMemGraphWidget, this->ui->copyBwGraphWidget },
-        { this->ui->headerLayout, this->ui->dedicatedHeaderLayout, this->ui->dedicatedTimeAxisLayout,
-          this->ui->copyHeaderLayout, this->ui->copyTimeAxisLayout }, 0.10);
     // Tighter stats block so the page needs less width: smaller gaps between the
     // big numbers and before the details table.
     this->ui->statsGrid->setHorizontalSpacing(24);
