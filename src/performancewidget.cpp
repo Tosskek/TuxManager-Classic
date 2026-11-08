@@ -35,6 +35,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPalette>
 #include <QPainter>
 #include <QRegularExpression>
@@ -48,23 +49,25 @@ namespace
         public:
             explicit PerformanceSplitterHandle(Qt::Orientation orientation, QSplitter *parent)
                 : QSplitterHandle(orientation, parent)
-            {}
+            {
+                this->setCursor(Qt::ArrowCursor);
+                this->setEnabled(false);
+            }
 
         protected:
+            void mousePressEvent(QMouseEvent *e) override { e->ignore(); }
+            void mouseMoveEvent(QMouseEvent *e) override { e->ignore(); }
+            void mouseReleaseEvent(QMouseEvent *e) override { e->ignore(); }
+
             void paintEvent(QPaintEvent *) override
             {
-                // This brings back the line effect that we lost when we moved to a splitter
+                // Fixed separator line between side panel and detail pages
                 QPainter painter(this);
                 const QColor lineColor = ColorScheme::DetectDarkMode()
                     ? QColor(0x55, 0x55, 0x55)
                     : QColor(0xb8, 0xb8, 0xb8);
                 painter.setPen(lineColor);
-
-                // The splitter handle is wider than the visible separator so it remains
-                // easy to grab. Draw only a single centered pixel column; painting at x=0
-                // can disappear after Qt clips/repositions the handle during resizing.
-                const int x = this->width() / 2;
-                painter.drawLine(x, 0, x, this->height());
+                painter.drawLine(0, 0, 0, this->height());
             }
     };
 
@@ -73,15 +76,15 @@ namespace
         public:
             explicit PerformanceSplitter(QWidget *parent = nullptr) : QSplitter(Qt::Horizontal, parent)
             {
-                // This is the draggable area, not the visual line width. The handle paints
-                // its own 1 px divider in the middle of this 5 px hit target.
-                this->setHandleWidth(5);
+                this->setHandleWidth(1);
             }
 
         protected:
             QSplitterHandle *createHandle() override
             {
-                return new PerformanceSplitterHandle(this->orientation(), this);
+                auto *handle = new PerformanceSplitterHandle(this->orientation(), this);
+                handle->setEnabled(false);
+                return handle;
             }
     };
 
@@ -195,12 +198,10 @@ void PerformanceWidget::setupLayout()
     if (!saved_state.isEmpty())
         this->m_splitter->restoreState(saved_state);
     else
-        this->m_splitter->setSizes({ 162, 680 });
+        this->m_splitter->setSizes({ 230, 680 });
 
-    connect(this->m_splitter, &QSplitter::splitterMoved, this, [this](int, int)
-    {
-        CFG->PerformanceSplitterState = this->m_splitter->saveState();
-    });
+    const int sideWidth = qMax(200, this->m_splitter->sizes().value(0, 230));
+    this->m_sidePanel->setFixedWidth(sideWidth);
 
     lay->addWidget(this->m_splitter);
 }
