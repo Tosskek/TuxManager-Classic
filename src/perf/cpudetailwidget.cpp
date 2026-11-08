@@ -38,9 +38,9 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
 {
     this->ui->setupUi(this);
     {
-        // Content sits ~25 screen pixels further right and ~20 lower (15 / 12 px at the default UI scale).
+        // Content margins: +13px left (15 - 2), +12px top.
         QMargins m = this->ui->verticalLayout->contentsMargins();
-        m.setLeft(m.left() + 15);
+        m.setLeft(m.left() + 13);
         m.setTop(m.top() + 12);
         this->ui->verticalLayout->setContentsMargins(m);
     }
