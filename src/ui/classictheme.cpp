@@ -123,9 +123,11 @@ void FT_Set_Transform(void *face, FT_Matrix_Hook *matrix, FT_Vector_Hook *delta)
     FaceScaleState *st = get_face_state(face);
     if (matrix && matrix->xy == 0 && matrix->yx == 0 && matrix->xx == matrix->yy && matrix->xx > 0x10000 && st->base_h > 0)
     {
-        const long scaled_w = (st->base_w * matrix->xx + 0x8000) >> 16;
-        const long scaled_h = (st->base_h * matrix->yy + 0x8000) >> 16;
-        real_FT_Set_Char_Size(face, scaled_w, scaled_h, st->hres, st->vres);
+        // Round target physical pixel height to the nearest integer pixel (multiple of 64 in 26.6 fixed-point)
+        // so fractional HighDPI scales (e.g. dpr = 1.6 at 0.8x scale) snap cleanly to the monochrome pixel grid.
+        const long phys_px_w = (((st->base_w * matrix->xx) >> 16) + 32) / 64;
+        const long phys_px_h = (((st->base_h * matrix->yy) >> 16) + 32) / 64;
+        real_FT_Set_Char_Size(face, phys_px_w * 64, phys_px_h * 64, st->hres, st->vres);
         st->currently_scaled = true;
         st->pending_scaled_load = true;
         real_FT_Set_Transform(face, nullptr, nullptr);

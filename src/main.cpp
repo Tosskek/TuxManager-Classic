@@ -76,12 +76,12 @@ int main(int argc, char *argv[])
         qputenv("FREETYPE_PROPERTIES", "truetype:interpreter-version=35");
     }
 
-    // Render the UI at 1.0 (100%) size by default.
-    // Override with e.g. TUX_MANAGER_SCALE=0.8 or QT_SCALE_FACTOR without rebuilding.
+    // Render the UI at 0.8 (80%) size by default.
+    // Override with e.g. TUX_MANAGER_SCALE=1.0 or QT_SCALE_FACTOR without rebuilding.
     if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
     {
         const QByteArray scale = qEnvironmentVariableIsSet("TUX_MANAGER_SCALE")
-                                 ? qgetenv("TUX_MANAGER_SCALE") : QByteArray("1.0");
+                                 ? qgetenv("TUX_MANAGER_SCALE") : QByteArray("0.8");
         qputenv("QT_SCALE_FACTOR", scale);
     }
 
