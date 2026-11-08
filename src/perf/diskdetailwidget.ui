@@ -112,7 +112,7 @@
      </item>
      <item>
       <widget class="QLabel" name="transferGraphMaxLabel">
-       <property name="text"><string>0 KB/s</string></property>
+       <property name="text"><string>0.00 MB/s</string></property>
        <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>
        <property name="styleSheet"><string>font-size: 8pt;</string></property>
       </widget>
@@ -161,12 +161,12 @@
      <item row="0" column="3"><widget class="QLabel" name="capacityValueLabel"><property name="text"><string>—</string></property></widget></item>
 
      <item row="1" column="0"><widget class="QLabel" name="readLabel"><property name="text"><string>Read speed</string></property><property name="styleSheet"><string></string></property></widget></item>
-     <item row="1" column="1"><widget class="QLabel" name="readValueLabel"><property name="text"><string>0 KB/s</string></property></widget></item>
+     <item row="1" column="1"><widget class="QLabel" name="readValueLabel"><property name="text"><string>0.00 MB/s</string></property></widget></item>
      <item row="1" column="2"><widget class="QLabel" name="formattedLabel"><property name="text"><string>Formatted</string></property><property name="styleSheet"><string></string></property></widget></item>
      <item row="1" column="3"><widget class="QLabel" name="formattedValueLabel"><property name="text"><string>—</string></property></widget></item>
 
      <item row="2" column="0"><widget class="QLabel" name="writeLabel"><property name="text"><string>Write speed</string></property><property name="styleSheet"><string></string></property></widget></item>
-     <item row="2" column="1"><widget class="QLabel" name="writeValueLabel"><property name="text"><string>0 KB/s</string></property></widget></item>
+     <item row="2" column="1"><widget class="QLabel" name="writeValueLabel"><property name="text"><string>0.00 MB/s</string></property></widget></item>
      <item row="2" column="2"><widget class="QLabel" name="systemDiskLabel"><property name="text"><string>System disk</string></property><property name="styleSheet"><string></string></property></widget></item>
      <item row="2" column="3"><widget class="QLabel" name="systemDiskValueLabel"><property name="text"><string>—</string></property></widget></item>
 

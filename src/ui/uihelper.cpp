@@ -354,8 +354,18 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
     {
         if (bigValues.contains(pair.second))
         {
-            const int r = (bigIndex / bigColumns) * 3;
-            const int c = bigIndex % bigColumns;
+            int r = (bigIndex / bigColumns) * 3;
+            int c = bigIndex % bigColumns;
+            // For disk stats: Active time on top (row 0), Read speed and Write speed side-by-side on row 1
+            if (pair.second->objectName() == "readValueLabel")
+            {
+                r = 3;
+                c = 0;
+            } else if (pair.second->objectName() == "writeValueLabel")
+            {
+                r = 3;
+                c = 1;
+            }
             pair.first->setStyleSheet(captionStyle);
             pair.second->setStyleSheet(bigValueStyle);
             big->addWidget(pair.first, r, c, Qt::AlignLeft | Qt::AlignBottom);
@@ -374,6 +384,13 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
             ++smallRow;
         }
     }
+
+    for (int c = 0; c < bigColumns; ++c)
+        big->setColumnMinimumWidth(c, 140);
+
+    small->setColumnMinimumWidth(0, 110);
+    small->setColumnMinimumWidth(1, 110);
+
     big->setRowStretch(big->rowCount(), 1);
     small->setRowStretch(small->rowCount(), 1);
 
@@ -381,6 +398,8 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
     grid->setContentsMargins(0, 8, 0, 0);
     grid->addLayout(big, 0, 0, Qt::AlignLeft | Qt::AlignTop);
     grid->addLayout(small, 0, 1, Qt::AlignLeft | Qt::AlignTop);
+    grid->setColumnMinimumWidth(0, 310);
+    grid->setColumnMinimumWidth(1, 230);
     grid->setColumnStretch(0, 0);
     grid->setColumnStretch(1, 0);
     grid->setColumnStretch(2, 1);

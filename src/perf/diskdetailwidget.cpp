@@ -83,7 +83,7 @@ DiskDetailWidget::DiskDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui
     this->ui->transferGraphWidget->SetGridColumns(6);
     this->ui->transferGraphWidget->SetGridRows(10);
     this->ui->transferGraphWidget->SetSeriesNames(tr("Read"), tr("Write"));
-    this->ui->transferGraphWidget->SetValueFormat(GraphWidget::ValueFormat::BytesPerSec);
+    this->ui->transferGraphWidget->SetValueFormat(GraphWidget::ValueFormat::MegabytesPerSec);
     UIHelper::EnableGraphContextMenu(this->ui->activeGraphWidget);
     UIHelper::EnableGraphContextMenu(this->ui->transferGraphWidget);
     this->ui->activeGraphMaxLabel->setText(tr("100%"));
@@ -165,8 +165,8 @@ void DiskDetailWidget::onUpdated()
 
     const Storage::DiskInfo &disk = Metrics::GetStorage()->FromIndex(this->m_diskIndex);
     this->ui->activeValueLabel->setText(QString::number(disk.ActivePct, 'f', 0) + "%");
-    this->ui->readValueLabel->setText(Misc::FormatBytesPerSecond(disk.ReadBps));
-    this->ui->writeValueLabel->setText(Misc::FormatBytesPerSecond(disk.WriteBps));
+    this->ui->readValueLabel->setText(Misc::FormatMegabytesPerSecond(disk.ReadBps));
+    this->ui->writeValueLabel->setText(Misc::FormatMegabytesPerSecond(disk.WriteBps));
     this->ui->capacityValueLabel->setText(Misc::FormatBytes(static_cast<quint64>(qMax<qint64>(0, disk.CapacityBytes)), 1));
     this->ui->formattedValueLabel->setText(disk.FormattedBytes > 0
                                            ? Misc::FormatBytes(static_cast<quint64>(qMax<qint64>(0, disk.FormattedBytes)), 1)
@@ -177,5 +177,5 @@ void DiskDetailWidget::onUpdated()
     this->ui->transferGraphWidget->SetMax(disk.MaxTransferBps);
     this->ui->activeGraphWidget->Tick();
     this->ui->transferGraphWidget->Tick();
-    this->ui->transferGraphMaxLabel->setText(Misc::FormatBytesPerSecond(disk.MaxTransferBps));
+    this->ui->transferGraphMaxLabel->setText(Misc::FormatMegabytesPerSecond(disk.MaxTransferBps));
 }

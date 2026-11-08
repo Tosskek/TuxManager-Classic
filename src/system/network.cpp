@@ -155,8 +155,8 @@ void Network::refreshNetworkMetadata(bool force)
 
 bool Network::Sample()
 {
-    QFile f("/proc/net/dev");
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    FILE *f = ::fopen("/proc/net/dev", "r");
+    if (!f)
         return false;
 
     struct NetCounters
@@ -168,35 +168,40 @@ bool Network::Sample()
     QHash<QString, NetCounters> countersByName;
     QStringList seenNames;
 
+    char line[512];
     int lineNo = 0;
-    for (;;)
+    while (::fgets(line, sizeof(line), f))
     {
-        const QByteArray line = f.readLine();
-        if (line.isNull())
-            break;
-        ++lineNo;
-        if (lineNo <= 2)
+        if (++lineNo <= 2)
             continue; // headers
 
-        const int colon = line.indexOf(':');
-        if (colon < 0)
+        char *colon = ::strchr(line, ':');
+        if (!colon)
+            continue;
+        *colon = '\0';
+
+        char *name = line;
+        while (*name == ' ' || *name == '\t')
+            ++name;
+        char *end = colon - 1;
+        while (end > name && (*end == ' ' || *end == '\t'))
+            *end-- = '\0';
+
+        if (name[0] == '\0' || (name[0] == 'l' && name[1] == 'o' && name[2] == '\0'))
             continue;
 
-        const QString ifName = QString::fromUtf8(line.left(colon)).trimmed();
-        if (ifName.isEmpty() || ifName == QLatin1String("lo"))
+        unsigned long long rx = 0, tx = 0;
+        if (::sscanf(colon + 1, "%llu %*u %*u %*u %*u %*u %*u %*u %llu", &rx, &tx) != 2)
             continue;
 
-        const QList<QByteArray> fields = line.mid(colon + 1).simplified().split(' ');
-        if (fields.size() < 9)
-            continue;
-
+        const QString ifName = QString::fromLatin1(name);
         NetCounters c;
-        c.rxBytes = fields.at(0).toULongLong();
-        c.txBytes = fields.at(8).toULongLong();
+        c.rxBytes = rx;
+        c.txBytes = tx;
         countersByName.insert(ifName, c);
         seenNames.append(ifName);
     }
-    f.close();
+    ::fclose(f);
 
     std::sort(seenNames.begin(), seenNames.end());
 
@@ -217,10 +222,9 @@ bool Network::Sample()
     }
 
     bool topologyChanged = false;
-    QSet<QString> seenNameSet(seenNames.cbegin(), seenNames.cend());
     for (const auto &n : std::as_const(this->m_networks))
     {
-        if (!seenNameSet.contains(n->Name))
+        if (!countersByName.contains(n->Name))
         {
             topologyChanged = true;
             break;
