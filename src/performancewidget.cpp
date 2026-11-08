@@ -251,9 +251,9 @@ void PerformanceWidget::setupDiskPanels()
     for (int i = 0; i < count; ++i)
     {
         const Storage::DiskInfo &disk = Metrics::GetStorage()->FromIndex(i);
-        this->m_diskNames.append(disk.Name);
+        this->m_diskNames.append(disk.DisplayName());
 
-        auto *item = new Perf::SidePanelItem(tr("Disk (%1)").arg(disk.Name), this);
+        auto *item = new Perf::SidePanelItem(tr("Disk (%1)").arg(disk.DisplayName()), this);
         item->SetGraphColor(scheme->DiskGraphLineColor, scheme->DiskGraphFillColor);
         item->SetGraphSource(disk.ActiveHistory);
         this->m_sidePanel->AddItem(item);

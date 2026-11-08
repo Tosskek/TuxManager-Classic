@@ -145,7 +145,7 @@ void DiskDetailWidget::SetDisk(int index)
     {
         const Storage::DiskInfo &disk = Metrics::GetStorage()->FromIndex(this->m_diskIndex);
 
-        this->ui->titleLabel->setText(tr("Disk (%1)").arg(disk.Name));
+        this->ui->titleLabel->setText(tr("Disk (%1)").arg(disk.DisplayName()));
         this->ui->modelLabel->setText(disk.Model);
         this->ui->typeValueLabel->setText(disk.Type);
         this->ui->deviceValueLabel->setText("/dev/" + disk.Name);

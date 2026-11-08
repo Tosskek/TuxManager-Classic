@@ -49,6 +49,13 @@ class Storage
             HistoryBuffer ActiveHistory { TUX_MANAGER_HISTORY_SIZE };
             HistoryBuffer ReadHistory { TUX_MANAGER_HISTORY_SIZE };
             HistoryBuffer WriteHistory { TUX_MANAGER_HISTORY_SIZE };
+
+            QString DisplayName() const
+            {
+                if (this->IsSystemDisk || this->Name.startsWith("nvme"))
+                    return QStringLiteral("C:");
+                return this->Name;
+            }
         };
 
         Storage();
