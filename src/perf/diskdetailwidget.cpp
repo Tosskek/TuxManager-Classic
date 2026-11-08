@@ -39,6 +39,9 @@ DiskDetailWidget::DiskDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui
         m.setTop(m.top() + 12);
         this->ui->verticalLayout->setContentsMargins(m);
     }
+    // Fixed minimum width so read/write speed values never cause columns or 3rd column table to shift
+    this->ui->readValueLabel->setMinimumWidth(110);
+    this->ui->writeValueLabel->setMinimumWidth(110);
     UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->activeValueLabel, this->ui->readValueLabel, this->ui->writeValueLabel });
     UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->activeGraphWidget, 4000), QPair<QWidget *, int>(this->ui->transferGraphWidget, 2000) }, 1);
     const ColorScheme *scheme = ColorScheme::GetCurrent();

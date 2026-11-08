@@ -385,12 +385,6 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
         }
     }
 
-    for (int c = 0; c < bigColumns; ++c)
-        big->setColumnMinimumWidth(c, 140);
-
-    small->setColumnMinimumWidth(0, 110);
-    small->setColumnMinimumWidth(1, 110);
-
     big->setRowStretch(big->rowCount(), 1);
     small->setRowStretch(small->rowCount(), 1);
 
@@ -398,8 +392,6 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
     grid->setContentsMargins(0, 8, 0, 0);
     grid->addLayout(big, 0, 0, Qt::AlignLeft | Qt::AlignTop);
     grid->addLayout(small, 0, 1, Qt::AlignLeft | Qt::AlignTop);
-    grid->setColumnMinimumWidth(0, 310);
-    grid->setColumnMinimumWidth(1, 230);
     grid->setColumnStretch(0, 0);
     grid->setColumnStretch(1, 0);
     grid->setColumnStretch(2, 1);
