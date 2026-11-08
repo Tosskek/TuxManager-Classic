@@ -22,6 +22,150 @@
 #include <QStyleFactory>
 #include <QTimer>
 #include <QWidget>
+#include <dlfcn.h>
+#include <mutex>
+
+// ── FreeType HighDPI Monochrome Hinting Fix ──────────────────────────────────
+// Qt 6's QFontEngineFT::loadFlags() unconditionally sets FT_LOAD_NO_HINTING (2)
+// whenever rendering onto a HighDPI (devicePixelRatio > 1.0) surface because it
+// loads the glyph at 1x logical size and scales the unhinted outline via
+// FT_Set_Transform(). For non-antialiased bitmap/monochrome rendering, scaling
+// unhinted outlines produces uneven 3px/2px vertical stems.
+//
+// By interposing FT_Set_Char_Size, FT_Set_Transform, and FT_Load_Glyph, we
+// intercept uniform HighDPI scale transforms, set the FreeType face directly to
+// the true physical pixel size (e.g. 2x), clear the post-hinting matrix/delta,
+// and force full monochrome hinting (FT_LOAD_TARGET_MONO) at the target grid.
+extern "C" {
+
+struct FT_Matrix_Hook { long xx, xy, yx, yy; };
+struct FT_Vector_Hook { long x, y; };
+
+typedef int (*fn_FT_Set_Char_Size)(void *, long, long, unsigned int, unsigned int);
+typedef void (*fn_FT_Set_Transform)(void *, FT_Matrix_Hook *, FT_Vector_Hook *);
+typedef int (*fn_FT_Load_Glyph)(void *, unsigned int, int);
+
+static fn_FT_Set_Char_Size real_FT_Set_Char_Size = nullptr;
+static fn_FT_Set_Transform real_FT_Set_Transform = nullptr;
+static fn_FT_Load_Glyph real_FT_Load_Glyph = nullptr;
+
+static void init_ft_hooks()
+{
+    if (!real_FT_Load_Glyph)
+    {
+        void *h = dlopen("libfreetype.so.6", RTLD_LAZY | RTLD_NOLOAD);
+        if (!h)
+            h = dlopen("libfreetype.so.6", RTLD_LAZY);
+        if (h)
+        {
+            real_FT_Set_Char_Size = reinterpret_cast<fn_FT_Set_Char_Size>(dlsym(h, "FT_Set_Char_Size"));
+            real_FT_Set_Transform = reinterpret_cast<fn_FT_Set_Transform>(dlsym(h, "FT_Set_Transform"));
+            real_FT_Load_Glyph = reinterpret_cast<fn_FT_Load_Glyph>(dlsym(h, "FT_Load_Glyph"));
+        }
+    }
+}
+
+struct FaceScaleState
+{
+    void *face = nullptr;
+    long base_w = 0;
+    long base_h = 0;
+    unsigned int hres = 0;
+    unsigned int vres = 0;
+    bool currently_scaled = false;
+    bool pending_scaled_load = false;
+};
+
+static std::mutex g_ftMutex;
+static FaceScaleState g_faces[256];
+
+static FaceScaleState *get_face_state(void *face)
+{
+    for (int i = 0; i < 256; ++i)
+    {
+        if (g_faces[i].face == face)
+            return &g_faces[i];
+    }
+    for (int i = 0; i < 256; ++i)
+    {
+        if (g_faces[i].face == nullptr)
+        {
+            g_faces[i].face = face;
+            return &g_faces[i];
+        }
+    }
+    g_faces[0].face = face;
+    return &g_faces[0];
+}
+
+__attribute__((visibility("default")))
+int FT_Set_Char_Size(void *face, long char_width, long char_height, unsigned int horz_resolution, unsigned int vert_resolution)
+{
+    init_ft_hooks();
+    {
+        std::lock_guard<std::mutex> lock(g_ftMutex);
+        FaceScaleState *st = get_face_state(face);
+        st->base_w = char_width;
+        st->base_h = char_height;
+        st->hres = horz_resolution;
+        st->vres = vert_resolution;
+        st->currently_scaled = false;
+        st->pending_scaled_load = false;
+    }
+    return real_FT_Set_Char_Size(face, char_width, char_height, horz_resolution, vert_resolution);
+}
+
+__attribute__((visibility("default")))
+void FT_Set_Transform(void *face, FT_Matrix_Hook *matrix, FT_Vector_Hook *delta)
+{
+    init_ft_hooks();
+    std::lock_guard<std::mutex> lock(g_ftMutex);
+    FaceScaleState *st = get_face_state(face);
+    if (matrix && matrix->xy == 0 && matrix->yx == 0 && matrix->xx == matrix->yy && matrix->xx > 0x10000 && st->base_h > 0)
+    {
+        const long scaled_w = (st->base_w * matrix->xx + 0x8000) >> 16;
+        const long scaled_h = (st->base_h * matrix->yy + 0x8000) >> 16;
+        real_FT_Set_Char_Size(face, scaled_w, scaled_h, st->hres, st->vres);
+        st->currently_scaled = true;
+        st->pending_scaled_load = true;
+        real_FT_Set_Transform(face, nullptr, nullptr);
+        return;
+    }
+    if (st->currently_scaled && st->base_h > 0)
+    {
+        real_FT_Set_Char_Size(face, st->base_w, st->base_h, st->hres, st->vres);
+        st->currently_scaled = false;
+    }
+    st->pending_scaled_load = false;
+    (void)delta;
+    real_FT_Set_Transform(face, matrix, nullptr);
+}
+
+__attribute__((visibility("default")))
+int FT_Load_Glyph(void *face, unsigned int glyph_index, int load_flags)
+{
+    init_ft_hooks();
+    {
+        std::lock_guard<std::mutex> lock(g_ftMutex);
+        FaceScaleState *st = get_face_state(face);
+        if (st->pending_scaled_load)
+        {
+            st->pending_scaled_load = false;
+        }
+        else if (st->currently_scaled && st->base_h > 0)
+        {
+            real_FT_Set_Char_Size(face, st->base_w, st->base_h, st->hres, st->vres);
+            st->currently_scaled = false;
+        }
+    }
+    // Strip FT_LOAD_NO_HINTING (0x2) and force FT_LOAD_TARGET_MONO (2 << 16)
+    load_flags &= ~0x2;
+    load_flags = (load_flags & ~(0xF << 16)) | (2 << 16);
+    return real_FT_Load_Glyph(face, glyph_index, load_flags);
+}
+
+} // extern "C"
+
 
 namespace
 {

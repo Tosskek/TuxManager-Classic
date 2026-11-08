@@ -86,7 +86,7 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
     // Memory values ("1.9 GB / 12.0 GB") are long; a slightly smaller size keeps
     // the stats row within the graphs' width.
     for (QLabel *value : { this->ui->utilValueLabel, this->ui->gpuMemValueLabel })
-        value->setStyleSheet(value->styleSheet().replace("font-size: 19pt", "font-size: 16pt"));
+        value->setStyleSheet(value->styleSheet().replace("font-size: 18pt", "font-size: 16pt"));
     if (QLayoutItem *tableItem = this->ui->statsGrid->itemAtPosition(0, 1))
     {
         if (QGridLayout *table = qobject_cast<QGridLayout *>(tableItem->layout()))
