@@ -150,18 +150,20 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
         // Grid lines are a pale tint of the graph's own line colour.
         QColor grid = this->m_lineColor;
         grid.setAlpha(scheme->DarkMode ? 90 : 38);
-        p.setPen(QPen(grid, 1));
+        p.setRenderHint(QPainter::Antialiasing, false);
+        p.setPen(QPen(grid, 0));
 
         // Denser grid on larger widgets while keeping existing configured minimum.
         const int targetGridPxX = 80;
         const int targetGridPxY = 55;
         const int gridCols = qMax(this->m_gridCols, qMax(1, w / targetGridPxX));
         const int gridRows = qMax(this->m_gridRows, qMax(1, h / targetGridPxY));
+        const qreal dpr = qMax<qreal>(0.01, this->devicePixelRatioF());
 
-        // Horizontal lines
+        // Horizontal lines snapped to physical pixels
         for (int i = 1; i < gridRows; ++i)
         {
-            const double y = contentTop + contentHeight * i / gridRows;
+            const double y = std::round((contentTop + contentHeight * i / gridRows) * dpr) / dpr;
             p.drawLine(QPointF(contentLeft, y), QPointF(contentRight, y));
         }
 
@@ -175,12 +177,17 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
             if (((slot + phase) % gridSlotStep) != 0)
                 continue;
 
-            const int x = static_cast<int>(contentLeft + slot * stepX + 0.5);
-            if (x <= contentLeft || x >= contentRight || x == lastX)
+            const double rawX = contentLeft + slot * stepX;
+            const int physX = static_cast<int>(std::round(rawX * dpr));
+            if (physX <= static_cast<int>(std::round(contentLeft * dpr)) ||
+                physX >= static_cast<int>(std::round(contentRight * dpr)) ||
+                physX == lastX)
                 continue;
+            const double x = physX / dpr;
             p.drawLine(QPointF(x, contentTop), QPointF(x, contentBottom));
-            lastX = x;
+            lastX = physX;
         }
+        p.setRenderHint(QPainter::Antialiasing, true);
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
