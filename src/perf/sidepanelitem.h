@@ -48,13 +48,13 @@ namespace Perf
             void SetGraphColor(QColor line, QColor fill);
             void SetGraphGridEnabled(bool enabled);
 
-            static constexpr int kGraphW = 72;
+            static constexpr int kGraphW = 79;
             static constexpr int kGraphH = 52;
             static constexpr int kPadX = 10;
             static constexpr int kPadY = 9;
 
-            QSize sizeHint()        const override { return QSize(240, kGraphH + 2 * kPadY); }
-            QSize minimumSizeHint() const override { return QSize(180, kGraphH + 2 * kPadY); }
+            QSize sizeHint()        const override { return QSize(250, kGraphH + 2 * kPadY); }
+            QSize minimumSizeHint() const override { return QSize(190, kGraphH + 2 * kPadY); }
 
         signals:
             void clicked();
