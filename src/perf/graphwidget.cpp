@@ -123,12 +123,11 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
     const QRect r = this->rect();
     const int   w = r.width();
     const int   h = r.height();
-    const double right = qMax(0, w - 1);
-    const double bottom = qMax(0, h - 1);
-    const double contentLeft = (w > 2) ? 1.0 : 0.0;
-    const double contentTop = (h > 2) ? 1.0 : 0.0;
-    const double contentRight = qMax(contentLeft, right - 1.0);
-    const double contentBottom = qMax(contentTop, bottom - 1.0);
+    const qreal px = 1.0 / qMax<qreal>(0.01, this->devicePixelRatioF());
+    const double contentLeft = px;
+    const double contentTop = px;
+    const double contentRight = qMax(contentLeft, static_cast<double>(w) - px);
+    const double contentBottom = qMax(contentTop, static_cast<double>(h) - px);
     const double contentWidth = qMax(0.0, contentRight - contentLeft);
     const double contentHeight = qMax(0.0, contentBottom - contentTop);
 
