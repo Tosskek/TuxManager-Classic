@@ -19,6 +19,7 @@
 #include "sidepanelitem.h"
 #include "../configuration.h"
 #include "../colorscheme.h"
+#include "../ui/classictheme.h"
 #include "globals.h"
 
 #include <QPainter>
@@ -88,6 +89,7 @@ void SidePanelItem::paintEvent(QPaintEvent *event)
     QWidget::paintEvent(event);   // draw children (the graph widget)
 
     QPainter p(this);
+    p.setRenderHint(QPainter::TextAntialiasing, false);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
     const QRect r = this->rect();
@@ -108,9 +110,8 @@ void SidePanelItem::paintEvent(QPaintEvent *event)
     p.fillRect(r, bg);
 
     // Title (large) and subtitle (one or more lines) to the right of the graph.
-    QFont titleFont = this->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() * 1.45);
-    QFont subFont = this->font();
+    QFont titleFont = ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 14.5);
+    QFont subFont = ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 10.0);
     const QFontMetrics titleFm(titleFont);
     const QFontMetrics subFm(subFont);
 

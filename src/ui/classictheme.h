@@ -12,7 +12,11 @@
 #ifndef CLASSICTHEME_H
 #define CLASSICTHEME_H
 
+#include <QString>
+#include <QtGlobal>
+
 class QApplication;
+class QFont;
 class QMenu;
 class QWidget;
 
@@ -29,6 +33,8 @@ namespace ClassicTheme
     void SwitchAndRestart(bool dark);
     //! Adds a checkable "Dark mode" action to a context menu.
     void AddToggleAction(QMenu *menu);
+    //! Snaps font size to integer physical screen pixels without antialiasing.
+    QFont SnapCrispFont(const QString &family = QStringLiteral("Arial"), qreal desiredPt = 10.0);
 }
 
 #endif // CLASSICTHEME_H

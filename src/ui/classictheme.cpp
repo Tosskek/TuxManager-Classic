@@ -17,6 +17,7 @@
 #include <QMenu>
 #include <QPalette>
 #include <QProcess>
+#include <QScreen>
 #include <QSettings>
 #include <QStyleFactory>
 #include <QTimer>
@@ -61,17 +62,35 @@ bool ClassicTheme::IsDark()
     return g_dark;
 }
 
+QFont ClassicTheme::SnapCrispFont(const QString &family, qreal desiredPt)
+{
+    const QString fam = family.isEmpty() ? QStringLiteral("Arial") : family;
+    QFont font(fam);
+    font.setStyleHint(QFont::SansSerif);
+    font.setStyleStrategy(QFont::NoAntialias);
+    font.setHintingPreference(QFont::PreferFullHinting);
+
+    QScreen *scr = QGuiApplication::primaryScreen();
+    if (scr && desiredPt > 0)
+    {
+        const qreal dpi = scr->logicalDotsPerInchY() * scr->devicePixelRatio();
+        const int ppem = qRound(desiredPt * dpi / 72.0);
+        font.setPointSizeF(ppem * 72.0 / dpi);
+    }
+    else if (desiredPt > 0)
+    {
+        font.setPointSizeF(desiredPt);
+    }
+    return font;
+}
+
 void ClassicTheme::Apply(QApplication &app)
 {
     g_dark = QSettings().value(kSettingKey, false).toBool();
     const Tokens &t = g_dark ? kDark : kLight;
 
     app.setStyle(QStyleFactory::create("Fusion"));
-    {
-        // Arial everywhere (painted text included).
-        QFont font("Arial", app.font().pointSize() > 0 ? app.font().pointSize() : 10);
-        app.setFont(font);
-    }
+    app.setFont(SnapCrispFont("Arial", 10.0));
 
     QPalette pal;
     pal.setColor(QPalette::Window, QColor(t.window));
@@ -96,6 +115,7 @@ void ClassicTheme::Apply(QApplication &app)
     app.setPalette(pal);
 
     QString qss = QString::fromLatin1(R"(
+        * { font-family: "Arial"; }
         QMenuBar { background: @window; border: none; }
         QMenuBar::item { padding: 3px 7px; background: transparent; }
         QMenuBar::item:selected { background: @hover; }

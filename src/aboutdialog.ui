@@ -63,7 +63,7 @@
     </font>
    </property>
    <property name="text">
-    <string>Tux Manager</string>
+    <string>Task Manager</string>
    </property>
    <property name="textFormat">
     <enum>Qt::TextFormat::PlainText</enum>

@@ -18,6 +18,7 @@
 
 #include "graphwidget.h"
 #include "../colorscheme.h"
+#include "../ui/classictheme.h"
 #include "misc.h"
 
 #include <cmath>
@@ -271,9 +272,8 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
 
     if (!this->m_overlayText.isEmpty())
     {
-        QFont f = p.font();
-        f.setPointSizeF(qMax(7.0, f.pointSizeF() - 1.0));
-        p.setFont(f);
+        p.setRenderHint(QPainter::TextAntialiasing, false);
+        p.setFont(ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 9.0));
         p.setPen(scheme->GraphOverlayTextColor);
         p.drawText(r.adjusted(4, 2, -4, -2), Qt::AlignLeft | Qt::AlignTop, this->m_overlayText);
     }

@@ -26,9 +26,7 @@ ClassicHeaderView::ClassicHeaderView(QWidget *parent) : QHeaderView(Qt::Horizont
 
 QFont ClassicHeaderView::totalFont() const
 {
-    QFont f = this->font();
-    f.setPointSizeF(f.pointSizeF() * 1.6);
-    return f;
+    return ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 16.0);
 }
 
 QSize ClassicHeaderView::sizeHint() const
@@ -46,6 +44,7 @@ void ClassicHeaderView::paintSection(QPainter *p, const QRect &rect, int logical
 
     p->save();
     p->setRenderHint(QPainter::Antialiasing, false);
+    p->setRenderHint(QPainter::TextAntialiasing, false);
     const bool dark = ClassicTheme::IsDark();
     const QColor bg = dark ? QColor(0x1a, 0x1a, 0x1a) : QColor(0xff, 0xff, 0xff);
     const QColor hoverBg = dark ? QColor(0x2a, 0x3b, 0x4d) : QColor(0xd9, 0xeb, 0xf9);
@@ -64,7 +63,7 @@ void ClassicHeaderView::paintSection(QPainter *p, const QRect &rect, int logical
 
     // Caption on the bottom line.
     const QString caption = this->model()->headerData(logical, this->orientation(), Qt::DisplayRole).toString();
-    p->setFont(this->font());
+    p->setFont(ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 10.0));
     p->setPen(captionColor);
     p->drawText(inner, hAlign | Qt::AlignBottom,
                 this->fontMetrics().elidedText(caption, Qt::ElideRight, inner.width()));

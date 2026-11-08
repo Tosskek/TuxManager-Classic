@@ -70,12 +70,18 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Render the whole UI at 80% size (fonts, graphs, paddings alike).
-    // Override with e.g. TUX_MANAGER_SCALE=0.75 without rebuilding.
+    // Enable classic TrueType interpreter v35 for crisp hard-pixel rendering without antialiasing.
+    if (!qEnvironmentVariableIsSet("FREETYPE_PROPERTIES"))
+    {
+        qputenv("FREETYPE_PROPERTIES", "truetype:interpreter-version=35");
+    }
+
+    // Render the UI at 1.0 (100%) size by default.
+    // Override with e.g. TUX_MANAGER_SCALE=0.8 or QT_SCALE_FACTOR without rebuilding.
     if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
     {
         const QByteArray scale = qEnvironmentVariableIsSet("TUX_MANAGER_SCALE")
-                                 ? qgetenv("TUX_MANAGER_SCALE") : QByteArray("0.8");
+                                 ? qgetenv("TUX_MANAGER_SCALE") : QByteArray("1.0");
         qputenv("QT_SCALE_FACTOR", scale);
     }
 

@@ -24,7 +24,7 @@ namespace WidgetStyle
 {
     QString TextStyle(const QColor &color, int fontSizePt, bool bold)
     {
-        QString style = QString("color: %1;").arg(color.name(QColor::HexArgb));
+        QString style = QString("color: %1; font-family: Arial;").arg(color.name(QColor::HexArgb));
         if (fontSizePt > 0)
             style += QString(" font-size: %1pt;").arg(fontSizePt);
         if (bold)

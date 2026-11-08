@@ -345,9 +345,9 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
 
     const ColorScheme *scheme = ColorScheme::GetCurrent();
     const QString valueColor = scheme->CpuTitleColor.name();
-    const QString captionStyle = QString("color: %1; font-size: 11pt;").arg(scheme->StatLabelColor.name());
-    const QString bigValueStyle = QString("color: %1; font-size: 19pt; font-weight: 300;").arg(valueColor);
-    const QString tableValueStyle = QString("color: %1; font-size: 11pt;").arg(valueColor);
+    const QString captionStyle = QString("color: %1; font-family: Arial; font-size: 11pt;").arg(scheme->StatLabelColor.name());
+    const QString bigValueStyle = QString("color: %1; font-family: Arial; font-size: 19pt;").arg(valueColor);
+    const QString tableValueStyle = QString("color: %1; font-family: Arial; font-size: 11pt;").arg(valueColor);
     int bigIndex = 0;
     int smallRow = 0;
     for (const auto &pair : pairs)
