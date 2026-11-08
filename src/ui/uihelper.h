@@ -83,10 +83,10 @@ namespace UIHelper
     //! so proportions stay the same at any window size instead of padding with blank space.
     void ApplyClassicPageGeometry(QWidget *page, const QList<QPair<QWidget *, double>> &graphRatios);
     //! Draws a page's graph rows (graphs plus their caption / time-axis rows) narrower
-    //! than the page content by `fraction` (e.g. 0.10 = 10%); stats keep the full width.
-    //! Graph heights registered with ApplyClassicPageGeometry follow the narrower width.
+    //! than the page content by `fraction` (e.g. 0.10 = 10%) plus an optional fixed `extraInsetPx`;
+    //! stats keep the full width. Graph heights registered with ApplyClassicPageGeometry follow the narrower width.
     void ApplyGraphRowsNarrower(QWidget *page, QBoxLayout *pageLayout, const QList<QWidget *> &graphs,
-                                const QList<QLayout *> &rows, double fraction);
+                                const QList<QLayout *> &rows, double fraction, int extraInsetPx = 0);
     void ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigValues, int bigColumns = 2);
 }
 

@@ -490,8 +490,8 @@ namespace
     {
         public:
             GraphRowsNarrower(QWidget *page, QBoxLayout *pageLayout, const QList<QWidget *> &graphs,
-                              const QList<QLayout *> &rows, double fraction)
-                : QObject(page), m_layout(pageLayout), m_graphs(graphs), m_rows(rows), m_fraction(fraction) {}
+                              const QList<QLayout *> &rows, double fraction, int extraInsetPx = 0)
+                : QObject(page), m_layout(pageLayout), m_graphs(graphs), m_rows(rows), m_fraction(fraction), m_extraInset(extraInsetPx) {}
 
             bool eventFilter(QObject *watched, QEvent *event) override
             {
@@ -500,7 +500,7 @@ namespace
                     QWidget *page = static_cast<QWidget *>(watched);
                     const QMargins m = this->m_layout->contentsMargins();
                     const int contentWidth = qMax(0, page->width() - m.left() - m.right());
-                    const int inset = static_cast<int>(contentWidth * this->m_fraction);
+                    const int inset = static_cast<int>(contentWidth * this->m_fraction) + this->m_extraInset;
                     for (QWidget *graph : this->m_graphs)
                         graph->setMaximumWidth(qMax(60, contentWidth - inset));
                     for (QLayout *row : this->m_rows)
@@ -521,14 +521,15 @@ namespace
             QList<QWidget *> m_graphs;
             QList<QLayout *> m_rows;
             double m_fraction;
+            int m_extraInset;
     };
 }
 
 void UIHelper::ApplyGraphRowsNarrower(QWidget *page, QBoxLayout *pageLayout, const QList<QWidget *> &graphs,
-                                      const QList<QLayout *> &rows, double fraction)
+                                      const QList<QLayout *> &rows, double fraction, int extraInsetPx)
 {
     if (!page || !pageLayout)
         return;
     page->setProperty("classicGraphWidthFactor", 1.0 - fraction);
-    page->installEventFilter(new GraphRowsNarrower(page, pageLayout, graphs, rows, fraction));
+    page->installEventFilter(new GraphRowsNarrower(page, pageLayout, graphs, rows, fraction, extraInsetPx));
 }

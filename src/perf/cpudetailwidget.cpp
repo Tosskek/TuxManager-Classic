@@ -45,6 +45,8 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
         this->ui->verticalLayout->setContentsMargins(m);
     }
     UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->statUtilValue, this->ui->statSpeedValue, this->ui->statProcessesValue, this->ui->statThreadsValue, this->ui->statUptimeValue });
+    // Move the details table ("Logical processors", "Virtual machine", "Temperature") 10px closer to the big values
+    this->ui->statsGrid->setHorizontalSpacing(46);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
     WidgetStyle::ApplyTextStyle(this->ui->titleLabel, scheme->CpuTitleColor, 22);
@@ -94,7 +96,8 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
         this->ui->verticalLayout->setStretch(graphIndex + 1, 1000);
         this->ui->verticalLayout->addStretch(1);
         UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout, { this->ui->graphAreaContainer },
-                                         { this->ui->headerLayout, caption, this->ui->timeAxisLayout }, 0.05);
+                                         { this->ui->headerLayout, caption, this->ui->timeAxisLayout }, 0.05, 10);
+        this->ui->graphAreaContainer->setProperty("classicExtraHeight", 10);
         UIHelper::ApplyClassicPageGeometry(this, { qMakePair(static_cast<QWidget *>(this->ui->graphAreaContainer), 0.42) });
     }
 

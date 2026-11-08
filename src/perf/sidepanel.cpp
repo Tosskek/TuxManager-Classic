@@ -27,7 +27,7 @@ SidePanel::SidePanel(QWidget *parent) : QWidget(parent)
     , m_containerLayout(new QVBoxLayout(this->m_container))
 {
     // Container inside the scroll area
-    this->m_containerLayout->setContentsMargins(0, 10, 0, 0);
+    this->m_containerLayout->setContentsMargins(0, 14, 0, 0);
     this->m_containerLayout->setSpacing(1);
     this->m_containerLayout->addStretch(1);      // pushes items to the top
 
