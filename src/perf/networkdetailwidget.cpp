@@ -37,10 +37,10 @@ NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(
 {
     this->ui->setupUi(this);
     {
-        // Content sits ~20 screen pixels lower (12 px at the default UI scale), with extra 6px left/right gap.
+        // Content sits ~20 screen pixels lower (12 px at the default UI scale), with symmetrical 10px left/right gap.
         QMargins m = this->ui->verticalLayout->contentsMargins();
-        m.setLeft(m.left() + 6);
-        m.setRight(m.right() + 6);
+        m.setLeft(m.left() + 10);
+        m.setRight(m.right() + 10);
         m.setTop(m.top() + 12);
         this->ui->verticalLayout->setContentsMargins(m);
     }
@@ -51,8 +51,6 @@ NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(
     this->ui->ipv6ValueLabel->hide();
     // Send above Receive in one column, details table in the second.
     UIHelper::ApplyClassicStats(this->ui->statsGrid, { this->ui->sendValueLabel, this->ui->receiveValueLabel }, 1);
-    UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout, { this->ui->throughputGraphWidget },
-                                     { this->ui->headerLayout, this->ui->throughputLabelLayout, this->ui->timeAxisLayout }, 0.10);
     UIHelper::ApplyClassicPageProportions(this->ui->verticalLayout, { QPair<QWidget *, int>(this->ui->throughputGraphWidget, 5000) }, 1);
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
