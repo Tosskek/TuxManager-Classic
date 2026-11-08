@@ -113,7 +113,7 @@ namespace Perf
             QColor          m_fillColor2;
 
             int             m_gridCols  { 5 };
-            int             m_gridRows  { 4 };
+            int             m_gridRows  { 10 };
             bool            m_gridEnabled { true };
             int             m_sampleCapacity { 60 };  ///< Matches the default history window in seconds.
             int             m_historyTick { 0 };      ///< Advances as samples arrive; used for grid phase.

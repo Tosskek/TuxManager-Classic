@@ -43,6 +43,7 @@ SidePanelItem::SidePanelItem(const QString &title, QWidget *parent) : QWidget(pa
     lay->setSpacing(0);
     this->m_graph->setFixedSize(kGraphW, kGraphH);
     this->m_graph->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
+    this->m_graph->SetGridRows(4);
     this->m_graph->SetGridEnabled(CFG->SidePanelGridEnabled);
     this->m_graph->SetHoverLineEnabled(false);
     this->m_graph->SetHoverTooltipEnabled(false);

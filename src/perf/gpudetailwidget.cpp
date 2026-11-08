@@ -107,7 +107,7 @@ GpuDetailWidget::GpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
         graph->SetColor(scheme->GpuGraphLineColor, scheme->GpuGraphFillColor, scheme->GpuGraphSecondaryFillColor);
         graph->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
         graph->SetGridColumns(6);
-        graph->SetGridRows(4);
+        graph->SetGridRows(10);
         graph->SetValueFormat(GraphWidget::ValueFormat::Percent);
     };
 

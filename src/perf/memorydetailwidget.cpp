@@ -78,7 +78,7 @@ MemoryDetailWidget::MemoryDetailWidget(QWidget *parent) : QWidget(parent), ui(ne
     this->ui->graphWidget->SetColor(scheme->MemoryGraphLineColor, scheme->MemoryGraphFillColor);
     this->ui->graphWidget->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->ui->graphWidget->SetGridColumns(6);
-    this->ui->graphWidget->SetGridRows(4);
+    this->ui->graphWidget->SetGridRows(10);
     this->ui->graphWidget->SetSeriesNames(tr("Used memory"));
     this->ui->graphWidget->SetValueFormat(GraphWidget::ValueFormat::Percent);
     UIHelper::EnableGraphContextMenu(this->ui->graphWidget);

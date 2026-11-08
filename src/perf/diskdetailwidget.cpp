@@ -73,7 +73,7 @@ DiskDetailWidget::DiskDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui
     this->ui->activeGraphWidget->SetColor(scheme->DiskGraphLineColor, scheme->DiskGraphFillColor);
     this->ui->activeGraphWidget->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->ui->activeGraphWidget->SetGridColumns(6);
-    this->ui->activeGraphWidget->SetGridRows(4);
+    this->ui->activeGraphWidget->SetGridRows(10);
     this->ui->activeGraphWidget->SetSeriesNames(tr("Active time"));
     this->ui->activeGraphWidget->SetValueFormat(GraphWidget::ValueFormat::Percent);
 
@@ -81,7 +81,7 @@ DiskDetailWidget::DiskDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui
     this->ui->transferGraphWidget->SetColor(scheme->DiskTransferGraphLineColor, scheme->DiskTransferGraphFillColor, scheme->DiskTransferGraphSecondaryFillColor);
     this->ui->transferGraphWidget->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->ui->transferGraphWidget->SetGridColumns(6);
-    this->ui->transferGraphWidget->SetGridRows(4);
+    this->ui->transferGraphWidget->SetGridRows(10);
     this->ui->transferGraphWidget->SetSeriesNames(tr("Read"), tr("Write"));
     this->ui->transferGraphWidget->SetValueFormat(GraphWidget::ValueFormat::BytesPerSec);
     UIHelper::EnableGraphContextMenu(this->ui->activeGraphWidget);

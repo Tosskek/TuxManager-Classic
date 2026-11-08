@@ -38,7 +38,7 @@ SwapGraphArea::SwapGraphArea(QWidget *parent) : QWidget(parent), m_stack(new QSt
     this->m_overallGraph = new GraphWidget(this->m_stack);
     this->m_overallGraph->SetSampleCapacity(CFG->PerfGraphWindowSec);
     this->m_overallGraph->SetGridColumns(6);
-    this->m_overallGraph->SetGridRows(4);
+    this->m_overallGraph->SetGridRows(10);
     this->m_overallGraph->SetSeriesNames(tr("Swap usage"));
     this->m_overallGraph->SetValueFormat(GraphWidget::ValueFormat::Percent);
     this->m_overallGraph->SetColor(scheme->SwapUsageGraphLineColor, scheme->SwapUsageGraphFillColor);

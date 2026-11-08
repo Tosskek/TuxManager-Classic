@@ -96,7 +96,7 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
         this->ui->verticalLayout->setStretch(graphIndex + 1, 1000);
         this->ui->verticalLayout->addStretch(1);
         UIHelper::ApplyGraphRowsNarrower(this, this->ui->verticalLayout, { this->ui->graphAreaContainer },
-                                         { this->ui->headerLayout, caption, this->ui->timeAxisLayout }, 0.05, 10);
+                                         { this->ui->headerLayout, caption, this->ui->timeAxisLayout, this->ui->statsGrid }, 0.05, 10);
         this->ui->graphAreaContainer->setProperty("classicExtraHeight", 10);
         UIHelper::ApplyClassicPageGeometry(this, { qMakePair(static_cast<QWidget *>(this->ui->graphAreaContainer), 0.42) });
     }

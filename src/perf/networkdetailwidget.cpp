@@ -78,7 +78,7 @@ NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(
     this->ui->throughputGraphWidget->SetColor(scheme->NetworkGraphLineColor, scheme->NetworkGraphFillColor, scheme->NetworkGraphSecondaryFillColor);
     this->ui->throughputGraphWidget->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->ui->throughputGraphWidget->SetGridColumns(6);
-    this->ui->throughputGraphWidget->SetGridRows(4);
+    this->ui->throughputGraphWidget->SetGridRows(10);
     this->ui->throughputGraphWidget->SetSeriesNames(tr("Receive"), tr("Send"));
     this->ui->throughputGraphWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this->ui->throughputGraphWidget, &QWidget::customContextMenuRequested, this, &NetworkDetailWidget::onGraphContextMenuRequested);

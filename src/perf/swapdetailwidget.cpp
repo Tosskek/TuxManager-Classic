@@ -85,7 +85,7 @@ SwapDetailWidget::SwapDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui
     this->ui->activityGraphWidget->SetColor(scheme->SwapActivityGraphLineColor, scheme->SwapActivityGraphFillColor, scheme->SwapActivityGraphSecondaryFillColor);
     this->ui->activityGraphWidget->SetSampleCapacity(TUX_MANAGER_HISTORY_SIZE);
     this->ui->activityGraphWidget->SetGridColumns(6);
-    this->ui->activityGraphWidget->SetGridRows(4);
+    this->ui->activityGraphWidget->SetGridRows(10);
     this->ui->activityGraphWidget->SetSeriesNames(tr("Swap in"), tr("Swap out"));
     this->ui->activityGraphWidget->SetValueFormat(GraphWidget::ValueFormat::BytesPerSec);
     this->ui->activityGraphWidget->setToolTip(
