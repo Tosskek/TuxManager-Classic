@@ -47,7 +47,7 @@ SidePanel::SidePanel(QWidget *parent) : QWidget(parent)
     outerLayout->addWidget(this->m_scrollArea);
     this->setLayout(outerLayout);
 
-    this->setMinimumWidth(230);
+    this->setFixedWidth(212);
 }
 
 void SidePanel::ApplyColorScheme()

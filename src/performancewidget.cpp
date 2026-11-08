@@ -66,14 +66,15 @@ namespace
                 const QColor lineColor = ColorScheme::DetectDarkMode()
                     ? QColor(0x55, 0x55, 0x55)
                     : QColor(0xb8, 0xb8, 0xb8);
-                painter.setPen(lineColor);
-                painter.drawLine(0, 0, 0, this->height());
+                painter.fillRect(this->rect(), lineColor);
             }
     };
 
     class PerformanceSplitter : public QSplitter
     {
         public:
+            static constexpr int kSidePanelWidth = 212;
+
             explicit PerformanceSplitter(QWidget *parent = nullptr) : QSplitter(Qt::Horizontal, parent)
             {
                 this->setHandleWidth(1);
@@ -85,6 +86,16 @@ namespace
                 auto *handle = new PerformanceSplitterHandle(this->orientation(), this);
                 handle->setEnabled(false);
                 return handle;
+            }
+
+            void resizeEvent(QResizeEvent *event) override
+            {
+                QSplitter::resizeEvent(event);
+                if (this->count() >= 2)
+                {
+                    const int rightW = qMax(0, this->width() - kSidePanelWidth - this->handleWidth());
+                    this->setSizes({ kSidePanelWidth, rightW });
+                }
             }
     };
 
@@ -194,14 +205,8 @@ void PerformanceWidget::setupLayout()
     this->m_splitter->setStretchFactor(0, 0);
     this->m_splitter->setStretchFactor(1, 1);
 
-    const QByteArray saved_state = CFG->PerformanceSplitterState;
-    if (!saved_state.isEmpty())
-        this->m_splitter->restoreState(saved_state);
-    else
-        this->m_splitter->setSizes({ 230, 680 });
-
-    const int sideWidth = qMax(200, this->m_splitter->sizes().value(0, 230));
-    this->m_sidePanel->setFixedWidth(sideWidth);
+    this->m_splitter->setSizes({ PerformanceSplitter::kSidePanelWidth, 680 });
+    this->m_sidePanel->setFixedWidth(PerformanceSplitter::kSidePanelWidth);
 
     lay->addWidget(this->m_splitter);
 }
