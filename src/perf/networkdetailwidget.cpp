@@ -37,8 +37,10 @@ NetworkDetailWidget::NetworkDetailWidget(QWidget *parent) : QWidget(parent), ui(
 {
     this->ui->setupUi(this);
     {
-        // Content sits ~20 screen pixels lower (12 px at the default UI scale).
+        // Content sits ~20 screen pixels lower (12 px at the default UI scale), with extra 6px left/right gap.
         QMargins m = this->ui->verticalLayout->contentsMargins();
+        m.setLeft(m.left() + 6);
+        m.setRight(m.right() + 6);
         m.setTop(m.top() + 12);
         this->ui->verticalLayout->setContentsMargins(m);
     }
