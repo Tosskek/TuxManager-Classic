@@ -279,7 +279,7 @@ void PerformanceWidget::setupGpuPanels()
 
         auto *item = new Perf::SidePanelItem(tr("GPU %1").arg(i), this);
         item->SetGraphColor(scheme->GpuGraphLineColor, scheme->GpuGraphFillColor);
-        item->SetGraphSource(gpu.UtilHistory);
+        item->SetGraphSource(gpu.PowerHistory);
         this->m_sidePanel->AddItem(item);
         this->m_gpuItems.append(item);
 

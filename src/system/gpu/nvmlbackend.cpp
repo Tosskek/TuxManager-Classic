@@ -278,6 +278,10 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu.CopyTxBps = hasTx ? static_cast<double>(txKBps) * 1024.0 : 0.0;
         gpu.CopyRxBps = hasRx ? static_cast<double>(rxKBps) * 1024.0 : 0.0;
         gpu.UtilHistory.Push(gpu.UtilPct);
+        const double powerPct = (gpu.PowerLimitW > 0.0 && gpu.PowerUsageW >= 0.0)
+                                    ? (gpu.PowerUsageW / gpu.PowerLimitW * 100.0)
+                                    : 0.0;
+        gpu.PowerHistory.Push(powerPct);
         const double memPct = gpu.MemTotalMiB > 0
                                   ? static_cast<double>(gpu.MemUsedMiB) / static_cast<double>(gpu.MemTotalMiB) * 100.0
                                   : 0.0;
@@ -400,6 +404,7 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu->CopyTxBps = 0.0;
         gpu->CopyRxBps = 0.0;
         gpu->UtilHistory.Push(0.0);
+        gpu->PowerHistory.Push(0.0);
         gpu->MemUsageHistory.Push(0.0);
         gpu->SharedMemHistory.Push(0.0);
         Misc::PushHistoryAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->MaxCopyBps);

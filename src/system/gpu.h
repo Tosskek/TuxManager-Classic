@@ -63,6 +63,7 @@ class GPU
             double          CopyRxBps { 0.0 };
             double          MaxCopyBps { 0.0 };
             HistoryBuffer   UtilHistory { TUX_MANAGER_HISTORY_SIZE };
+            HistoryBuffer   PowerHistory { TUX_MANAGER_HISTORY_SIZE };
             HistoryBuffer   MemUsageHistory { TUX_MANAGER_HISTORY_SIZE };
             HistoryBuffer   SharedMemHistory { TUX_MANAGER_HISTORY_SIZE };
             HistoryBuffer   CopyTxHistory { TUX_MANAGER_HISTORY_SIZE };

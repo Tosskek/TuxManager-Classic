@@ -641,6 +641,10 @@ bool GpuIntelSysmanBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &g
                 this->sampleFdInfoEngines(gpu, id, fdInfoElapsedNs);
             }
             gpu.UtilHistory.Push(gpu.UtilPct);
+            const double powerPct = (gpu.PowerLimitW > 0.0 && gpu.PowerUsageW >= 0.0)
+                                        ? (gpu.PowerUsageW / gpu.PowerLimitW * 100.0)
+                                        : 0.0;
+            gpu.PowerHistory.Push(powerPct);
 
             uint32_t memCount = 0;
             if (pZesDeviceEnumMemoryModules(device, &memCount, nullptr) == ZE_RESULT_SUCCESS && memCount > 0)
@@ -860,6 +864,7 @@ bool GpuIntelSysmanBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &g
         gpu->CopyTxBps = 0.0;
         gpu->CopyRxBps = 0.0;
         gpu->UtilHistory.Push(0.0);
+        gpu->PowerHistory.Push(0.0);
         gpu->MemUsageHistory.Push(0.0);
         gpu->SharedMemHistory.Push(0.0);
         Misc::PushHistoryAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->MaxCopyBps);

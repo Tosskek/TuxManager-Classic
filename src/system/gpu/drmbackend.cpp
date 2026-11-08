@@ -253,6 +253,7 @@ bool GpuDrmBackend::sampleAmdCard(DRMCard &card, GPU::GPUInfo &gpu, qint64 fdInf
         gpu.UtilPct = 0.0;
     }
     gpu.UtilHistory.Push(gpu.UtilPct);
+    gpu.PowerHistory.Push(0.0);
 
     if (!card.TempPath.isEmpty())
     {
@@ -477,6 +478,7 @@ bool GpuDrmBackend::sampleIntelCard(DRMCard &card, GPU::GPUInfo &gpu, qint64 fdI
         gpu.UtilPct = qBound(0.0, totalUtil, 100.0);
     }
     gpu.UtilHistory.Push(gpu.UtilPct);
+    gpu.PowerHistory.Push(0.0);
 
     const double memPct = gpu.MemTotalMiB > 0
                               ? static_cast<double>(gpu.MemUsedMiB) / static_cast<double>(gpu.MemTotalMiB) * 100.0
