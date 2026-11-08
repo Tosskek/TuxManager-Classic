@@ -338,7 +338,7 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
     // one comfortable size in grey, big values are large and light, rows breathe.
     QGridLayout *big = new QGridLayout();
     big->setHorizontalSpacing(30);
-    big->setVerticalSpacing(0);
+    big->setVerticalSpacing(4);
     QGridLayout *small = new QGridLayout();
     small->setHorizontalSpacing(28);
     small->setVerticalSpacing(7);
