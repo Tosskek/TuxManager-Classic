@@ -458,6 +458,10 @@ void ProcessesWidget::setTreeViewMode(bool enabled)
         this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot.isEmpty() ? this->m_model->GetProcesses() : this->m_lastProcessSnapshot);
         if (this->m_treeModel->rowCount() > 0)
             this->m_treeView->resizeColumnToContents(OS::ProcessTreeModel::ColName);
+    } else if (!this->m_lastProcessSnapshot.isEmpty())
+    {
+        // The flat model is not updated while the tree is shown; catch it up now.
+        this->m_model->SetProcesses(this->m_lastProcessSnapshot);
     }
 
     if (!this->m_treeView || !this->ui->tableView)
@@ -465,6 +469,12 @@ void ProcessesWidget::setTreeViewMode(bool enabled)
 
     this->ui->tableView->setVisible(!enabled);
     this->m_treeView->setVisible(enabled);
+}
+
+void ProcessesWidget::ApplyRefreshRate()
+{
+    if (this->m_active && !CFG->RefreshPaused)
+        this->m_refreshTimer->start(CFG->RefreshRateMs);
 }
 
 void ProcessesWidget::SetActive(bool active)
@@ -577,14 +587,17 @@ void ProcessesWidget::onRefreshFinished(int consumer, quint64 token, const QList
     this->m_lastProcessSnapshot = processes;
     if (this->m_appRegistry)
         this->m_appRegistry->Annotate(this->m_lastProcessSnapshot);
-    this->m_model->SetProcesses(this->m_lastProcessSnapshot);
 
     if (this->m_treeViewMode)
     {
-        this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot);
-        this->restoreTreeStateDeferred(expandedPids, treeSelection, treeCurrentPid, treeScroll);
+        // The flat table is hidden in tree mode, so it is not updated here (it is
+        // refilled from m_lastProcessSnapshot when switching back to table mode).
+        if (this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot))
+            this->restoreTreeStateDeferred(expandedPids, treeSelection, treeCurrentPid, treeScroll);
+        this->updateStatusBar();
     } else
     {
+        this->m_model->SetProcesses(this->m_lastProcessSnapshot);
         UIHelper::RestoreTableSelection(
             this->ui->tableView,
             OS::ProcessModel::ColPid,

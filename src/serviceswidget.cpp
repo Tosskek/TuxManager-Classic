@@ -108,6 +108,12 @@ ServicesWidget::~ServicesWidget()
     delete this->ui;
 }
 
+void ServicesWidget::ApplyRefreshRate()
+{
+    if (this->m_active && !CFG->RefreshPaused)
+        this->m_refreshTimer->start(CFG->RefreshRateMs);
+}
+
 void ServicesWidget::SetActive(bool active)
 {
     if (this->m_active == active)

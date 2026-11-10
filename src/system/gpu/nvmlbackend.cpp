@@ -20,8 +20,13 @@
 #include "../../logger.h"
 #include "../../misc.h"
 
+#include <QHash>
 #include <QSet>
 #include <dlfcn.h>
+
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 namespace
 {
@@ -129,9 +134,68 @@ namespace
     }
 }
 
+struct GpuNvmlBackend::PcieWorker
+{
+    std::mutex              mutex;
+    std::condition_variable cv;
+    std::thread             thread;
+    bool                    stop { false };
+    bool                    requested { false };
+    std::vector<NvmlDevice> devices;                       //!< devices to query on next request
+    QHash<NvmlDevice, std::pair<unsigned int, unsigned int>> results; //!< device -> (tx KB/s, rx KB/s)
+
+    void run()
+    {
+        static constexpr unsigned int kNvmlPcieTxBytes = 0;
+        static constexpr unsigned int kNvmlPcieRxBytes = 1;
+
+        std::unique_lock<std::mutex> lock(this->mutex);
+        for (;;)
+        {
+            this->cv.wait(lock, [this] { return this->stop || this->requested; });
+            if (this->stop)
+                return;
+            this->requested = false;
+            const std::vector<NvmlDevice> todo = this->devices;
+            lock.unlock();
+
+            QHash<NvmlDevice, std::pair<unsigned int, unsigned int>> fresh;
+            for (NvmlDevice dev : todo)
+            {
+                unsigned int tx = 0;
+                unsigned int rx = 0;
+                if (pNvmlDeviceGetPcieThroughput(dev, kNvmlPcieTxBytes, &tx) != NVML_SUCCESS)
+                    tx = 0;
+                if (pNvmlDeviceGetPcieThroughput(dev, kNvmlPcieRxBytes, &rx) != NVML_SUCCESS)
+                    rx = 0;
+                fresh.insert(dev, { tx, rx });
+            }
+
+            lock.lock();
+            this->results = fresh;
+        }
+    }
+};
+
+GpuNvmlBackend::GpuNvmlBackend() = default;
+
 GpuNvmlBackend::~GpuNvmlBackend()
 {
     this->unload();
+}
+
+void GpuNvmlBackend::stopPcieWorker()
+{
+    if (!this->m_pcie)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(this->m_pcie->mutex);
+        this->m_pcie->stop = true;
+    }
+    this->m_pcie->cv.notify_all();
+    if (this->m_pcie->thread.joinable())
+        this->m_pcie->thread.join();
+    this->m_pcie.reset();
 }
 
 void GpuNvmlBackend::Detect()
@@ -215,11 +279,10 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
     const QString driverVersion = QString::fromLatin1(driverVer).trimmed();
 
     QSet<QString> seenIds;
+    std::vector<NvmlDevice> pcieDevices;
 
     for (unsigned int i = 0; i < count; ++i)
     {
-        static constexpr unsigned int kNvmlPcieTxBytes = 0;
-        static constexpr unsigned int kNvmlPcieRxBytes = 1;
         static constexpr unsigned int kNvmlTemperatureGpu = 0;
         static constexpr unsigned int kNvmlClockGraphics = 0;
 
@@ -243,10 +306,21 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         const bool hasMem = pNvmlDeviceGetMemoryInfo(dev, &mem) == NVML_SUCCESS;
         unsigned int txKBps = 0;
         unsigned int rxKBps = 0;
-        const bool hasTx = pNvmlDeviceGetPcieThroughput
-                           && pNvmlDeviceGetPcieThroughput(dev, kNvmlPcieTxBytes, &txKBps) == NVML_SUCCESS;
-        const bool hasRx = pNvmlDeviceGetPcieThroughput
-                           && pNvmlDeviceGetPcieThroughput(dev, kNvmlPcieRxBytes, &rxKBps) == NVML_SUCCESS;
+        bool hasTx = false;
+        bool hasRx = false;
+        if (this->m_pcie)
+        {
+            // Result of the previous asynchronous query (one sample behind).
+            std::lock_guard<std::mutex> lock(this->m_pcie->mutex);
+            const auto it = this->m_pcie->results.constFind(dev);
+            if (it != this->m_pcie->results.cend())
+            {
+                txKBps = it->first;
+                rxKBps = it->second;
+                hasTx = hasRx = true;
+            }
+        }
+        pcieDevices.push_back(dev);
         unsigned int tempC = 0;
         const bool hasTemp = pNvmlDeviceGetTemperature
                              && pNvmlDeviceGetTemperature(dev, kNvmlTemperatureGpu, &tempC) == NVML_SUCCESS;
@@ -415,6 +489,22 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         seenIds.insert(id);
     }
 
+    // Kick off the next (slow) PCIe throughput query in the background.
+    if (pNvmlDeviceGetPcieThroughput && !pcieDevices.empty())
+    {
+        if (!this->m_pcie)
+        {
+            this->m_pcie = std::make_unique<PcieWorker>();
+            this->m_pcie->thread = std::thread([w = this->m_pcie.get()] { w->run(); });
+        }
+        {
+            std::lock_guard<std::mutex> lock(this->m_pcie->mutex);
+            this->m_pcie->devices = pcieDevices;
+            this->m_pcie->requested = true;
+        }
+        this->m_pcie->cv.notify_one();
+    }
+
     for (const auto &gpu : gpus)
     {
         if (gpu->Backend != QLatin1String("NVML") || seenIds.contains(gpu->ID))
@@ -448,6 +538,9 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
 
 void GpuNvmlBackend::unload()
 {
+    // The helper thread calls into NVML, so it must stop before NVML is shut down.
+    this->stopPcieWorker();
+
     if (this->m_available && pNvmlShutdown)
         pNvmlShutdown();
 

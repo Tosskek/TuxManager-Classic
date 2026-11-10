@@ -18,6 +18,8 @@
 
 #include "servicemodel.h"
 
+#include <algorithm>
+
 using namespace OS;
 
 namespace
@@ -115,9 +117,35 @@ Qt::ItemFlags ServiceModel::flags(const QModelIndex &index) const
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
 }
 
-void ServiceModel::SetServices(const QList<Service> &services)
+void ServiceModel::SetServices(const QList<Service> &unsortedServices)
 {
+    // systemd returns units in hash order, which can differ between calls; sort by
+    // unit name so unchanged lists compare equal (the view sorts via its proxy).
+    QList<Service> services = unsortedServices;
+    std::sort(services.begin(), services.end(), [](const Service &a, const Service &b) { return a.Unit < b.Unit; });
+
+    // Usual case: the same units in the same order -> update changed rows only, so
+    // the view keeps its scroll position and repaints just what changed.
+    bool sameUnits = services.size() == this->m_services.size();
+    for (int i = 0; sameUnits && i < services.size(); ++i)
+        sameUnits = services.at(i).Unit == this->m_services.at(i).Unit;
+
+    if (sameUnits)
+    {
+        for (int i = 0; i < services.size(); ++i)
+        {
+            const Service &cur = this->m_services.at(i);
+            const Service &in = services.at(i);
+            if (cur.LoadState == in.LoadState && cur.ActiveState == in.ActiveState
+                && cur.SubState == in.SubState && cur.Description == in.Description)
+                continue;
+            this->m_services[i] = in;
+            emit dataChanged(this->index(i, 0), this->index(i, ColCount - 1));
+        }
+        return;
+    }
+
     beginResetModel();
-    this->m_services = services;
+    this->m_services = std::move(services);
     endResetModel();
 }

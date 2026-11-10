@@ -116,6 +116,12 @@ UsersWidget::~UsersWidget()
     delete this->ui;
 }
 
+void UsersWidget::ApplyRefreshRate()
+{
+    if (this->m_active && !CFG->RefreshPaused)
+        this->m_refreshTimer->start(CFG->RefreshRateMs);
+}
+
 void UsersWidget::SetActive(bool active)
 {
     if (this->m_active == active)

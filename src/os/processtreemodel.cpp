@@ -19,6 +19,9 @@
 #include "../ui/heatcolor.h"
 #include "processtreemodel.h"
 
+#include <QSet>
+#include <functional>
+
 #include "appregistry.h"
 #include "../misc.h"
 using namespace OS;
@@ -36,6 +39,8 @@ QModelIndex ProcessTreeModel::index(int row, int column, const QModelIndex &pare
 {
     if (row < 0 || column < 0 || column >= ColCount)
         return {};
+    if (parent.isValid() && parent.column() != 0)
+        return {};   // only column 0 has children (Qt item-model convention)
 
     Node *parentNode = nodeFromIndex(parent);
     if (!parentNode)
@@ -56,15 +61,13 @@ QModelIndex ProcessTreeModel::parent(const QModelIndex &child) const
         return {};
 
     Node *parentNode = node->parent;
-    Node *grandParent = parentNode->parent ? parentNode->parent : this->m_root;
-    const int row = grandParent->children.indexOf(parentNode);
-    if (row < 0)
-        return {};
-    return createIndex(row, 0, parentNode);
+    return createIndex(parentNode->row, 0, parentNode);
 }
 
 int ProcessTreeModel::rowCount(const QModelIndex &parent) const
 {
+    if (parent.isValid() && parent.column() != 0)
+        return 0;
     Node *parentNode = nodeFromIndex(parent);
     if (!parentNode)
         parentNode = this->m_root;
@@ -234,8 +237,141 @@ Qt::ItemFlags ProcessTreeModel::flags(const QModelIndex &index) const
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
 }
 
-void ProcessTreeModel::SetProcesses(const QList<Process> &processes)
+bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
 {
+    // Classic grouping instead of the full parent chain:
+    //  - kernel threads (children of kthreadd, PID 2) fold under kthreadd;
+    //  - helper processes of the same program (parent has the same name)
+    //    fold under that program, like "app (3)";
+    //  - everything else is a top-level row, so apps are never buried
+    //    under systemd / the session manager.
+    QHash<pid_t, const Process *> incomingByPid;
+    incomingByPid.reserve(processes.size());
+    for (const Process &proc : processes)
+        incomingByPid.insert(proc.PID, &proc);
+
+    auto groupParentPid = [&incomingByPid](const Process &proc) -> pid_t
+    {
+        const pid_t ppid = proc.PPID;
+        if (ppid <= 0 || ppid == proc.PID)
+            return 0;
+        const Process *pp = incomingByPid.value(ppid, nullptr);
+        if (pp && (ppid == 2 || pp->Name == proc.Name))
+            return ppid;
+        return 0;
+    };
+
+    // Incremental path: keep existing nodes, remove exited processes, insert new
+    // ones and update changed rows in place. Only touched rows are signalled, so the
+    // view repaints just those and keeps its expansion, selection and scroll
+    // position. A full reset is needed only when a surviving process moves to a
+    // different group (e.g. it was re-parented) or loses its parent but keeps children.
+    if (this->m_root)
+    {
+        auto isAlive = [&incomingByPid](const Node *node)
+        {
+            const Process *in = incomingByPid.value(node->process.PID, nullptr);
+            return in && in->StartTimeTicks == node->process.StartTimeTicks;
+        };
+
+        bool canPatch = true;
+        QList<Node *> removedRoots;   // top-most removed nodes (their subtree goes with them)
+        for (auto it = this->m_byPid.cbegin(); canPatch && it != this->m_byPid.cend(); ++it)
+        {
+            Node *node = it.value();
+            if (isAlive(node))
+            {
+                const Process &in = *incomingByPid.value(node->process.PID);
+                const pid_t currentParent = (node->parent && node->parent != this->m_root) ? node->parent->process.PID : 0;
+                if (currentParent != groupParentPid(in))
+                    canPatch = false;
+                continue;
+            }
+            // Removed: its children must be removed too, otherwise they'd need regrouping.
+            for (const Node *child : std::as_const(node->children))
+            {
+                if (isAlive(child))
+                {
+                    canPatch = false;
+                    break;
+                }
+            }
+            if (node->parent == this->m_root || isAlive(node->parent))
+                removedRoots.append(node);
+        }
+
+        if (canPatch)
+        {
+            QSet<pid_t> countChanged;   // parents whose "name (N)" label changes (by PID: nodes may be freed)
+
+            // 1) Remove exited processes (whole subtrees).
+            for (Node *node : std::as_const(removedRoots))
+            {
+                Node *parent = node->parent;
+                const int row = node->row;
+                beginRemoveRows(indexOfNode(parent), row, row);
+                parent->children.removeAt(row);
+                for (int i = row; i < parent->children.size(); ++i)
+                    parent->children[i]->row = i;
+                eraseSubtreeFromIndex(node);
+                endRemoveRows();
+                freeNode(node);   // only after Qt has dropped its references to the rows
+                if (parent != this->m_root)
+                    countChanged.insert(parent->process.PID);
+            }
+
+            // 2) Insert new processes; parents are inserted before their children.
+            std::function<Node *(const Process &)> ensureNode = [&](const Process &proc) -> Node *
+            {
+                Node *existing = this->m_byPid.value(proc.PID, nullptr);
+                if (existing && existing->process.StartTimeTicks == proc.StartTimeTicks)
+                    return existing;
+
+                const pid_t groupPid = groupParentPid(proc);
+                Node *parent = this->m_root;
+                if (groupPid > 0)
+                    parent = ensureNode(*incomingByPid.value(groupPid));
+
+                Node *node = new Node();
+                node->process = proc;
+                node->parent = parent;
+                node->row = static_cast<int>(parent->children.size());
+                beginInsertRows(indexOfNode(parent), node->row, node->row);
+                parent->children.append(node);
+                this->m_byPid.insert(proc.PID, node);
+                endInsertRows();
+                if (parent != this->m_root)
+                    countChanged.insert(parent->process.PID);
+                return node;
+            };
+
+            for (const Process &proc : processes)
+            {
+                Node *node = this->m_byPid.value(proc.PID, nullptr);
+                if (!node || node->process.StartTimeTicks != proc.StartTimeTicks)
+                {
+                    ensureNode(proc);
+                    continue;
+                }
+                // 3) Update surviving rows whose data changed.
+                if (node->process.HasSameData(proc))
+                    continue;
+                node->process = proc;
+                emit dataChanged(createIndex(node->row, 0, node), createIndex(node->row, ColCount - 1, node));
+            }
+
+            for (pid_t parentPid : std::as_const(countChanged))
+            {
+                Node *parent = this->m_byPid.value(parentPid, nullptr);
+                if (!parent)
+                    continue;
+                const QModelIndex idx = createIndex(parent->row, ColName, parent);
+                emit dataChanged(idx, idx, { Qt::DisplayRole });
+            }
+            return false;
+        }
+    }
+
     beginResetModel();
     freeNode(this->m_root);
     this->m_root = new Node();
@@ -253,23 +389,32 @@ void ProcessTreeModel::SetProcesses(const QList<Process> &processes)
 
     for (Node *node : nodes)
     {
-        // Classic grouping instead of the full parent chain:
-        //  - kernel threads (children of kthreadd, PID 2) fold under kthreadd;
-        //  - helper processes of the same program (parent has the same name)
-        //    fold under that program, like "app (3)";
-        //  - everything else is a top-level row, so apps are never buried
-        //    under systemd / the session manager.
-        Node *parent = this->m_root;
-        const pid_t ppid = node->process.PPID;
-        Node *ppNode = (ppid > 0 && ppid != node->process.PID) ? this->m_byPid.value(ppid, nullptr) : nullptr;
-        if (ppNode && (ppid == 2 || ppNode->process.Name == node->process.Name))
-            parent = ppNode;
+        const pid_t groupPid = groupParentPid(node->process);
+        Node *parent = groupPid > 0 ? this->m_byPid.value(groupPid, this->m_root) : this->m_root;
 
         node->parent = parent;
+        node->row = static_cast<int>(parent->children.size());
         parent->children.append(node);
     }
 
     endResetModel();
+    return true;
+}
+
+QModelIndex ProcessTreeModel::indexOfNode(Node *node) const
+{
+    if (!node || node == this->m_root)
+        return {};
+    return createIndex(node->row, 0, node);
+}
+
+void ProcessTreeModel::eraseSubtreeFromIndex(Node *node)
+{
+    const auto it = this->m_byPid.constFind(node->process.PID);
+    if (it != this->m_byPid.cend() && it.value() == node)
+        this->m_byPid.erase(it);
+    for (Node *child : std::as_const(node->children))
+        this->eraseSubtreeFromIndex(child);
 }
 
 QModelIndex ProcessTreeModel::IndexForPid(pid_t pid) const
@@ -277,10 +422,7 @@ QModelIndex ProcessTreeModel::IndexForPid(pid_t pid) const
     Node *node = this->m_byPid.value(pid, nullptr);
     if (!node || !node->parent)
         return {};
-    const int row = node->parent->children.indexOf(node);
-    if (row < 0)
-        return {};
-    return createIndex(row, 0, node);
+    return createIndex(node->row, 0, node);
 }
 
 QString ProcessTreeModel::columnHeader(Column col)

@@ -21,6 +21,7 @@
 #include <QFile>
 #include <QString>
 #include <QDir>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/statvfs.h>
@@ -31,6 +32,15 @@ CPU::CPU()
     this->readCpuMetadata();
     this->readHardwareMetadata();
     this->detectCpuTemperatureSensor();
+}
+
+CPU::~CPU()
+{
+    for (int fd : this->m_cpuFreqFds)
+    {
+        if (fd >= 0)
+            ::close(fd);
+    }
 }
 
 double CPU::CorePercent(int i) const
@@ -244,6 +254,11 @@ void CPU::detectCpuFreqSource()
     }
 
     this->m_cpuFreqUseSysfs = !this->m_cpuFreqPaths.isEmpty();
+
+    // Keep the per-core files open: sysfs regenerates the value on every read at
+    // offset 0, so a pread() per sample replaces an open/read/close per core.
+    for (const QString &path : std::as_const(this->m_cpuFreqPaths))
+        this->m_cpuFreqFds.push_back(::open(path.toLocal8Bit().constData(), O_RDONLY | O_CLOEXEC));
 }
 
 void CPU::readCurrentFreq()
@@ -255,11 +270,18 @@ void CPU::readCurrentFreq()
 
     if (this->m_cpuFreqUseSysfs)
     {
-        for (int i = 0; i < this->m_cpuFreqPaths.size() && i < coreMhz.size(); ++i)
+        for (int i = 0; i < static_cast<int>(this->m_cpuFreqFds.size()) && i < coreMhz.size(); ++i)
         {
-            bool ok = false;
-            const double kHz = Misc::ReadFile(this->m_cpuFreqPaths.at(i)).toDouble(&ok);
-            if (ok && kHz > 0.0)
+            const int fd = this->m_cpuFreqFds[static_cast<size_t>(i)];
+            if (fd < 0)
+                continue;
+            char buf[32];
+            const ssize_t n = ::pread(fd, buf, sizeof(buf) - 1, 0);
+            if (n <= 0)
+                continue;
+            buf[n] = '\0';
+            const double kHz = ::strtod(buf, nullptr);
+            if (kHz > 0.0)
                 coreMhz[i] = kHz / 1000.0;
         }
     } else

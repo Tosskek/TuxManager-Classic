@@ -27,7 +27,7 @@
 class GpuNvmlBackend
 {
     public:
-        GpuNvmlBackend() = default;
+        GpuNvmlBackend();
         ~GpuNvmlBackend();
 
         void Detect();
@@ -36,6 +36,12 @@ class GpuNvmlBackend
 
     private:
         void unload();
+        void stopPcieWorker();
+
+        //! nvmlDeviceGetPcieThroughput() blocks ~20 ms per call (it measures over a
+        //! 20 ms window), so it runs on a helper thread; Sample() uses the latest result.
+        struct PcieWorker;
+        std::unique_ptr<PcieWorker> m_pcie;
 
         bool    m_available { false };
         void   *m_libHandle { nullptr };

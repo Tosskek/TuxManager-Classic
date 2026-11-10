@@ -29,6 +29,9 @@ class CPU
 {
     public:
         CPU();
+        ~CPU();
+        CPU(const CPU &) = delete;
+        CPU &operator=(const CPU &) = delete;
 
         /// Sample /proc/stat aggregate + per-core jiffies and append utilization histories.
         bool Sample();
@@ -97,6 +100,7 @@ class CPU
         bool     m_cpuFreqSourceDetected { false };
         bool     m_cpuFreqUseSysfs { false };
         QVector<QString> m_cpuFreqPaths;
+        std::vector<int> m_cpuFreqFds;   //!< kept open; re-read with pread() each sample
 };
 
 #endif // CPU_H

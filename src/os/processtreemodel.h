@@ -68,7 +68,9 @@ namespace OS
             QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
             Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-            void SetProcesses(const QList<Process> &processes);
+            //! Updates the tree. Returns true when the model had to be reset (the set of
+            //! processes or their grouping changed); otherwise rows were updated in place.
+            bool SetProcesses(const QList<Process> &processes);
             /// Registry used to provide icons for the name column; nullptr disables icons.
             void SetAppRegistry(AppRegistry *registry) { this->m_appRegistry = registry; }
             QModelIndex IndexForPid(pid_t pid) const;
@@ -79,6 +81,7 @@ namespace OS
                 Process process;
                 Node *parent { nullptr };
                 QList<Node *> children;
+                int row { 0 };   //!< index in parent->children (avoids O(n) indexOf lookups)
             };
 
             Node *m_root { nullptr };
@@ -87,6 +90,8 @@ namespace OS
 
             static QString columnHeader(Column col);
             static void freeNode(Node *node);
+            QModelIndex indexOfNode(Node *node) const;
+            void eraseSubtreeFromIndex(Node *node);
             static Node *nodeFromIndex(const QModelIndex &index);
     };
 }

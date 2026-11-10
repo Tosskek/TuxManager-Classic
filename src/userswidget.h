@@ -42,6 +42,8 @@ class UsersWidget : public QWidget
         explicit UsersWidget(OS::ProcessRefreshService *processRefreshService, QWidget *parent = nullptr);
         ~UsersWidget();
         void SetActive(bool active);
+        //! Restart the refresh timer with CFG->RefreshRateMs (only while this tab is active).
+        void ApplyRefreshRate();
         bool IsActive() const { return this->m_active; }
 
     signals:

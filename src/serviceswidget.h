@@ -58,6 +58,8 @@ class ServicesWidget : public QWidget
         explicit ServicesWidget(QWidget *parent = nullptr);
         ~ServicesWidget();
         void SetActive(bool active);
+        //! Restart the refresh timer with CFG->RefreshRateMs (only while this tab is active).
+        void ApplyRefreshRate();
         bool IsActive() const { return this->m_active; }
 
     private slots:

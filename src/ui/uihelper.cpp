@@ -22,6 +22,7 @@
 #include "../metrics.h"
 #include "../misc.h"
 #include "../performancewidget.h"
+#include "../mainwindow.h"
 #include "../colorscheme.h"
 #include "classictheme.h"
 
@@ -232,6 +233,7 @@ void UIHelper::AddRefreshIntervalContextMenu(QMenu *menu, QTimer *timer, bool ti
 
             if (timer && timerOwnerActive)
                 timer->start(ms);
+            MainWindow::SyncCornerToggles();
         });
     }
 
@@ -250,6 +252,7 @@ void UIHelper::AddRefreshIntervalContextMenu(QMenu *menu, QTimer *timer, bool ti
 
         if (timer && timerOwnerActive)
             timer->stop();
+        MainWindow::SyncCornerToggles();
     });
 }
 
@@ -279,6 +282,7 @@ void UIHelper::AddGraphWindowContextMenu(QMenu *menu)
                 if (pw->IsActive())
                     pw->onProviderUpdated();
             }
+            MainWindow::SyncCornerToggles();
         });
     }
 }

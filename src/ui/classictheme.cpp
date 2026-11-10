@@ -285,8 +285,8 @@ void ClassicTheme::Apply(QApplication &app)
         QPushButton:hover { background: @btnHoverBg; border-color: @btnHoverBorder; }
         QPushButton:pressed { background: @btnPressedBg; border-color: @btnHoverBorder; }
         QPushButton:disabled { background: @btnDisabledBg; border-color: @tabBorder; color: @btnDisabledText; }
-        QToolButton#themeToggle { border: none; padding: 2px 8px; color: @text; background: transparent; }
-        QToolButton#themeToggle:hover { background: @hover; }
+        QToolButton#themeToggle, QToolButton#cornerToggle { border: none; padding: 2px 8px; color: @text; background: transparent; }
+        QToolButton#themeToggle:hover, QToolButton#cornerToggle:hover { background: @hover; }
         QLineEdit { border: 1px solid @editBorder; padding: 2px 4px; background: @base; color: @text; }
         QLineEdit:focus { border-color: @accent; }
         QSplitter::handle { background: @window; }

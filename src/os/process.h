@@ -83,12 +83,14 @@ namespace OS
             static QString GetStateString(char state);
             /// Identity based on PID and StartTime (should be unique) - used by perf optimizations to avoid unnecessary queries
             Identity GetIdentity() const;
+            //! True when every displayed field equals the other process (used to skip no-op updates).
+            bool HasSameData(const Process &other) const;
 
         private:
-            static bool loadOneStatAndUid(pid_t pid, Process &out);
-            static void loadStatm(Process &proc);
-            static bool loadIO(Process &proc);
-            static void loadUserAndCmdline(Process &proc);
+            static bool loadOneStatAndUid(int dirFd, pid_t pid, Process &out);
+            static void loadStatm(int dirFd, Process &proc);
+            static bool loadIO(int dirFd, Process &proc);
+            static void loadUserAndCmdline(int dirFd, Process &proc);
     };
 
     bool operator<(const Process::Identity &lhs, const Process::Identity &rhs);

@@ -134,7 +134,11 @@ namespace
 
 bool ServiceHelper::IsSystemdAvailable(QString *reason)
 {
-    const QString exe = QStandardPaths::findExecutable("systemctl");
+    // Called on every services refresh; the PATH lookup does not need to repeat.
+    thread_local QString t_systemctlExe;
+    if (t_systemctlExe.isEmpty())
+        t_systemctlExe = QStandardPaths::findExecutable("systemctl");
+    const QString &exe = t_systemctlExe;
     if (exe.isEmpty())
     {
         if (reason)
@@ -205,32 +209,59 @@ bool ServiceHelper::ListServicesViaSystemdDbus(QList<ServiceRecord> &records, QS
         return false;
     }
 
-    sd_bus *bus = nullptr;
-    sd_bus_message *reply = nullptr;
-
-    int r = pSdBusOpenSystem(&bus);
-    if (r < 0 || !bus)
+    // The service list is refreshed every tick from the same worker thread, so keep
+    // one system-bus connection per thread instead of connecting + authenticating
+    // on every refresh. If the cached connection broke (e.g. dbus restarted),
+    // reconnect once.
+    struct CachedBus
     {
-        if (error)
-            *error = QObject::tr("sd-bus open system failed (%1)").arg(r);
-        return false;
-    }
+        sd_bus *bus { nullptr };
+        void reset()
+        {
+            if (this->bus && pSdBusUnref)
+                pSdBusUnref(this->bus);
+            this->bus = nullptr;
+        }
+        ~CachedBus() { this->reset(); }
+    };
+    thread_local CachedBus t_bus;
 
-    r = pSdBusCallMethod(bus,
-                         "org.freedesktop.systemd1",
-                         "/org/freedesktop/systemd1",
-                         "org.freedesktop.systemd1.Manager",
-                         "ListUnits",
-                         nullptr,
-                         &reply,
-                         nullptr);
-    if (r < 0 || !reply)
+    sd_bus_message *reply = nullptr;
+    int r = 0;
+    for (int attempt = 0; attempt < 2; ++attempt)
+    {
+        if (!t_bus.bus)
+        {
+            r = pSdBusOpenSystem(&t_bus.bus);
+            if (r < 0 || !t_bus.bus)
+            {
+                t_bus.bus = nullptr;
+                if (error)
+                    *error = QObject::tr("sd-bus open system failed (%1)").arg(r);
+                return false;
+            }
+        }
+
+        r = pSdBusCallMethod(t_bus.bus,
+                             "org.freedesktop.systemd1",
+                             "/org/freedesktop/systemd1",
+                             "org.freedesktop.systemd1.Manager",
+                             "ListUnits",
+                             nullptr,
+                             &reply,
+                             nullptr);
+        if (r >= 0 && reply)
+            break;
+
+        if (reply)
+            pSdBusMessageUnref(reply);
+        reply = nullptr;
+        t_bus.reset();
+    }
+    if (!reply)
     {
         if (error)
             *error = QObject::tr("sd-bus ListUnits call failed (%1)").arg(r);
-        if (reply)
-            pSdBusMessageUnref(reply);
-        pSdBusUnref(bus);
         return false;
     }
 
@@ -240,7 +271,6 @@ bool ServiceHelper::ListServicesViaSystemdDbus(QList<ServiceRecord> &records, QS
         if (error)
             *error = QObject::tr("sd-bus decode failed (%1)").arg(r);
         pSdBusMessageUnref(reply);
-        pSdBusUnref(bus);
         return false;
     }
 
@@ -281,7 +311,6 @@ bool ServiceHelper::ListServicesViaSystemdDbus(QList<ServiceRecord> &records, QS
                 *error = QObject::tr("sd-bus read row failed (%1/%2)").arg(rr).arg(er);
             pSdBusMessageExitContainer(reply); // array (best effort)
             pSdBusMessageUnref(reply);
-            pSdBusUnref(bus);
             return false;
         }
 
@@ -300,7 +329,6 @@ bool ServiceHelper::ListServicesViaSystemdDbus(QList<ServiceRecord> &records, QS
 
     pSdBusMessageExitContainer(reply); // array
     pSdBusMessageUnref(reply);
-    pSdBusUnref(bus);
 
     if (r < 0)
     {

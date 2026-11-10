@@ -37,36 +37,6 @@ namespace
         return lhs.GetIdentity() < rhs.GetIdentity();
     }
 
-    bool processDataEquals(const Process &lhs, const Process &rhs)
-    {
-        return lhs.PID == rhs.PID
-               && lhs.PPID == rhs.PPID
-               && lhs.Name == rhs.Name
-               && lhs.CmdLine == rhs.CmdLine
-               && lhs.State == rhs.State
-               && lhs.UID == rhs.UID
-               && lhs.User == rhs.User
-               && lhs.Priority == rhs.Priority
-               && lhs.Nice == rhs.Nice
-               && lhs.Threads == rhs.Threads
-               && lhs.VMRssKb == rhs.VMRssKb
-               && lhs.vmSizeKb == rhs.vmSizeKb
-               && lhs.SharedKb == rhs.SharedKb
-               && lhs.TextKb == rhs.TextKb
-               && lhs.DataKb == rhs.DataKb
-               && lhs.CPUTicks == rhs.CPUTicks
-               && lhs.CPUPercent == rhs.CPUPercent
-               && lhs.StartTimeTicks == rhs.StartTimeTicks
-               && lhs.IsKernelThread == rhs.IsKernelThread
-               && lhs.IOReadBytes == rhs.IOReadBytes
-               && lhs.IOWriteBytes == rhs.IOWriteBytes
-               && lhs.IOReadBps == rhs.IOReadBps
-               && lhs.IOWriteBps == rhs.IOWriteBps
-               && lhs.IOTotalsAvailable == rhs.IOTotalsAvailable
-               && lhs.IORatesAvailable == rhs.IORatesAvailable
-               && lhs.IOPermissionDenied == rhs.IOPermissionDenied
-               && lhs.IconName == rhs.IconName;
-    }
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
@@ -300,7 +270,7 @@ void ProcessModel::SetProcesses(const QList<Process> &processes)
 
         if (currentId == incomingId)
         {
-            if (!processDataEquals(this->m_processes.at(row), sortedProcesses.at(row)))
+            if (!this->m_processes.at(row).HasSameData(sortedProcesses.at(row)))
             {
                 this->m_processes[row] = sortedProcesses.at(row);
                 emit dataChanged(this->index(row, 0),
