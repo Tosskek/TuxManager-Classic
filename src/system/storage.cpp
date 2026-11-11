@@ -325,8 +325,7 @@ bool Storage::Sample()
             d->ReadBps = 0.0;
             d->WriteBps = 0.0;
             d->ActiveHistory.Push(0.0);
-            Misc::PushHistoryAndUpdateMax(d->ReadHistory, 0.0, d->MaxTransferBps);
-            Misc::PushHistoryAndUpdateMax(d->WriteHistory, 0.0, d->MaxTransferBps);
+            Misc::PushHistoryPairAndUpdateMax(d->ReadHistory, 0.0, d->WriteHistory, 0.0, d->MaxTransferBps);
             continue;
         }
 
@@ -337,8 +336,7 @@ bool Storage::Sample()
             d->PrevWriteSecs = c.writeSectors;
             d->PrevIoMs      = c.ioMs;
             d->ActiveHistory.Push(0.0);
-            Misc::PushHistoryAndUpdateMax(d->ReadHistory, 0.0, d->MaxTransferBps);
-            Misc::PushHistoryAndUpdateMax(d->WriteHistory, 0.0, d->MaxTransferBps);
+            Misc::PushHistoryPairAndUpdateMax(d->ReadHistory, 0.0, d->WriteHistory, 0.0, d->MaxTransferBps);
             continue;
         }
 
@@ -355,8 +353,7 @@ bool Storage::Sample()
         d->WriteBps = static_cast<double>(dWriteSecs) * kSectorBytes * 1000.0 / static_cast<double>(dtMs);
 
         d->ActiveHistory.Push(d->ActivePct);
-        Misc::PushHistoryAndUpdateMax(d->ReadHistory, d->ReadBps, d->MaxTransferBps);
-        Misc::PushHistoryAndUpdateMax(d->WriteHistory, d->WriteBps, d->MaxTransferBps);
+        Misc::PushHistoryPairAndUpdateMax(d->ReadHistory, d->ReadBps, d->WriteHistory, d->WriteBps, d->MaxTransferBps);
     }
 
     return true;

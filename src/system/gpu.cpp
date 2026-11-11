@@ -72,6 +72,11 @@ void GPU::detectGpuBackends()
                                this->m_intelSysmanBackend->IsAvailable());
 }
 
+void GPU::SetDetailPageVisible(bool visible)
+{
+    GpuNvmlBackend::SetDetailPageVisible(visible);
+}
+
 bool GPU::Sample()
 {
     bool ok = false;

@@ -173,38 +173,32 @@ QString Misc::FileNameFromSymlink(const QString &path)
     return QFileInfo(target).fileName();
 }
 
-void Misc::PushHistoryAndUpdateMax(HistoryBuffer &vec, double val, double &cachedMax, double minMax)
+namespace
 {
-    double removed = 0.0;
-    bool removedWasCurrentMax = false;
-    if (vec.Size() >= vec.Capacity() && !vec.IsEmpty())
+    int s_historyMaxWindow = 60;
+
+    double windowMax(const HistoryBuffer &vec, double floorValue)
     {
-        removed = vec.Front();
-        removedWasCurrentMax = (removed >= cachedMax);
+        double result = floorValue;
+        const int size = vec.Size();
+        for (int i = qMax(0, size - s_historyMaxWindow); i < size; ++i)
+            result = qMax(result, vec.At(i));
+        return result;
     }
+}
 
-    vec.Push(val);
+void Misc::SetHistoryMaxWindow(int samples)
+{
+    s_historyMaxWindow = qMax(1, samples);
+}
 
-    if (vec.IsEmpty())
-    {
-        cachedMax = minMax;
-        return;
-    }
-
-    if (val >= cachedMax)
-    {
-        cachedMax = qMax(minMax, val);
-        return;
-    }
-
-    if (removedWasCurrentMax)
-    {
-        double recomputedMax = minMax;
-        for (int i = 0; i < vec.Size(); ++i)
-            recomputedMax = qMax(recomputedMax, vec.At(i));
-        cachedMax = recomputedMax;
-        return;
-    }
-
-    cachedMax = qMax(cachedMax, minMax);
+void Misc::PushHistoryPairAndUpdateMax(HistoryBuffer &first, double firstVal, HistoryBuffer &second, double secondVal,
+                                       double &cachedMax, double minMax)
+{
+    first.Push(firstVal);
+    second.Push(secondVal);
+    // Recomputed from the visible window every time: it is at most a few thousand
+    // comparisons, and it keeps the scale right when an old peak scrolls out of view
+    // or the window length changes.
+    cachedMax = windowMax(second, windowMax(first, minMax));
 }

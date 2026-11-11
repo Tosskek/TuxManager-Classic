@@ -19,15 +19,82 @@
 #include "../ui/heatcolor.h"
 #include "processtreemodel.h"
 
+#include <QFont>
+#include <QRegularExpression>
 #include <QSet>
-#include <functional>
+
+#include <algorithm>
+
+#include <unistd.h>
 
 #include "appregistry.h"
 #include "../misc.h"
 using namespace OS;
 
+namespace
+{
+    //! Friendlier name for a process row:
+    //!  - the kernel cuts names to 15 characters ("xdg-desktop-por"); use the full
+    //!    executable name from the command line when it starts with the short name;
+    //!  - for script interpreters show the script ("python3 win7startmenu.py" -> "win7startmenu.py").
+    QString displayName(const Process &proc)
+    {
+        if (proc.IsKernelThread || proc.CmdLine.isEmpty())
+            return proc.Name;
+        const QStringList args = proc.CmdLine.split(' ', Qt::SkipEmptyParts);
+        if (args.isEmpty())
+            return proc.Name;
+        QString name = proc.Name;
+        if (name.size() >= 15)
+        {
+            // The full name is the executable, or the script for "python3 /usr/bin/networkd-dispatcher".
+            for (int i = 0; i < qMin<qsizetype>(2, args.size()); ++i)
+            {
+                const QString exe = args.at(i).section('/', -1);
+                if (exe.startsWith(name))
+                {
+                    name = exe;
+                    break;
+                }
+            }
+        }
+
+        static const QStringList interpreters = { "python", "python3", "bash", "sh", "dash", "zsh", "perl", "ruby", "node", "env" };
+        QString base = name;
+        base.remove(QRegularExpression(QStringLiteral("[0-9.]+$")));   // python3.12 -> python
+        if (interpreters.contains(name) || interpreters.contains(base))
+        {
+            for (int i = 1; i < args.size(); ++i)
+            {
+                const QString &arg = args.at(i);
+                if (arg.startsWith('-'))
+                {
+                    if (arg == QLatin1String("-c") || arg == QLatin1String("-m"))
+                        break;   // inline code / module: keep the interpreter name
+                    continue;
+                }
+                const QString script = arg.section('/', -1);
+                if (!script.isEmpty() && (arg.contains('/') || script.contains('.')))
+                    return script;
+                break;
+            }
+        }
+        return name;
+    }
+}
+
+
 ProcessTreeModel::ProcessTreeModel(QObject *parent) : QAbstractItemModel(parent), m_root(new Node())
 {
+    for (int s = 0; s < SectionCount; ++s)
+    {
+        Node *section = new Node();
+        section->kind = Kind::Section;
+        section->parent = this->m_root;
+        section->row = s;
+        this->m_root->children.append(section);
+        this->m_sections[s] = section;
+    }
 }
 
 ProcessTreeModel::~ProcessTreeModel()
@@ -89,6 +156,72 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
     if (!node)
         return {};
     const Process &proc = node->process;
+    const Column column = static_cast<Column>(index.column());
+
+    // ── Section header rows ("Apps (12)") ───────────────────────────────────
+    if (node->kind == Kind::Section)
+    {
+        if (role == Qt::DisplayRole && column == ColName)
+        {
+            const QString title = node == this->m_sections[SectionApps] ? tr("Apps") : tr("Background & system");
+            return QString("%1 (%2)").arg(title).arg(node->memberCount);
+        }
+        if (role == Qt::FontRole && column == ColName)
+        {
+            QFont font = this->m_baseFont;   // same size as the list, just bold
+            font.setBold(true);
+            return font;
+        }
+        if (role == Qt::UserRole && column == ColName)
+            return node->row;   // not sortable; ProcessTreeProxy keeps the order
+        if (role == Qt::DisplayRole || role == Qt::UserRole)
+        {
+            // Totals for CPU / memory / disk, nothing for per-process fields.
+            switch (column)
+            {
+                case ColCpu: case ColMemRss: case ColMemVirt: case ColMemShared: case ColMemText: case ColMemData:
+                case ColIoReads: case ColIoWrites: case ColIoReadsPerSec: case ColIoWritesPerSec: case ColThreads: case ColDisk:
+                    break;
+                default:
+                    return {};
+            }
+        } else if (role != Qt::TextAlignmentRole)
+        {
+            return {};
+        }
+    }
+
+    // ── App rows ("Claude (40)") and name groups ("claude (13)"): totals ─────
+    if (node->kind == Kind::Group || node->kind == Kind::App)
+    {
+        switch (column)
+        {
+            case ColName:
+                if (role == Qt::DisplayRole)
+                {
+                    const QString name = node->kind == Kind::App ? proc.Name : node->key;
+                    const int members = node->kind == Kind::App ? node->memberCount : static_cast<int>(node->children.size());
+                    return QString("%1 (%2)").arg(name).arg(members);
+                }
+                if (role == Qt::UserRole)
+                    return node->kind == Kind::App ? proc.Name : node->key;
+                break;
+            case ColPid:
+            case ColState:
+            case ColPriority:
+            case ColNice:
+                if (role == Qt::DisplayRole)
+                    return {};
+                if (role == Qt::UserRole && column == ColPid)
+                {
+                    const QList<pid_t> pids = this->PidsForIndex(index);
+                    return pids.isEmpty() ? 0LL : static_cast<qlonglong>(*std::min_element(pids.cbegin(), pids.cend()));
+                }
+                break;
+            default:
+                break;
+        }
+    }
 
     if (role == Qt::DecorationRole)
     {
@@ -102,11 +235,17 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
         switch (static_cast<Column>(index.column()))
         {
             case ColPid:      return proc.PID;
-            case ColName:
-                return node->children.isEmpty() ? proc.Name
-                                                : QString("%1 (%2)").arg(proc.Name).arg(node->children.size());
+            case ColName:     return displayName(proc);
             case ColUser:     return proc.User;
-            case ColState:    return Process::GetStateString(proc.State);
+            case ColState:
+                // Like Windows' Status column: blank while normal, only unusual states.
+                switch (proc.State)
+                {
+                    case 'T': case 't': return tr("Suspended");
+                    case 'Z':           return tr("Zombie");
+                    case 'D':           return tr("Waiting for disk");
+                    default:            return QString();
+                }
             case ColCpu:      return proc.CPUPercent < 0.05 ? QString("0%") : QString::number(proc.CPUPercent, 'f', 1) + "%";
             case ColMemRss:   return Misc::FormatKiB(proc.VMRssKb, 0);
             case ColMemVirt:  return Misc::FormatKiB(proc.vmSizeKb, 0);
@@ -176,7 +315,7 @@ QVariant ProcessTreeModel::data(const QModelIndex &index, int role) const
 
     if (role == Qt::BackgroundRole)
     {
-        static const double cpuCapacity = 100.0 * qMax(1L, sysconf(_SC_NPROCESSORS_ONLN));
+        static constexpr double cpuCapacity = 100.0;   // CPU % is already a share of the whole CPU
         switch (static_cast<Column>(index.column()))
         {
             case ColCpu:
@@ -234,171 +373,379 @@ Qt::ItemFlags ProcessTreeModel::flags(const QModelIndex &index) const
 {
     if (!index.isValid())
         return Qt::NoItemFlags;
+    if (IsUnselectableIndex(index))
+        return Qt::ItemIsEnabled;   // "Linux kernel": can be expanded but not selected / ended
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
+}
+
+namespace
+{
+    //! A process the user started: their own, launched as a desktop app or from a
+    //! terminal/launcher, which systemd places in an app-*.scope / app-*@*.service unit
+    //! under app.slice. Desktop services (session.slice, background.slice), autostart
+    //! helpers (app-*@autostart.service), other users and kernel threads are "system".
+    bool isUserApp(const Process &proc, uid_t myUid)
+    {
+        if (proc.IsKernelThread || proc.UID != myUid)
+            return false;
+        const int at = proc.CGroup.indexOf(QLatin1String("/app.slice/app-"));
+        if (at < 0)
+            return false;
+        const int unitStart = at + static_cast<int>(sizeof("/app.slice/") - 1);
+        const int slash = proc.CGroup.indexOf('/', unitStart);
+        const QStringView unit = QStringView(proc.CGroup).mid(unitStart, slash < 0 ? -1 : slash - unitStart);
+        return !unit.endsWith(QLatin1String("@autostart.service"));
+    }
+
+    //! Name rows are grouped by. Kernel threads carry per-CPU / per-device suffixes
+    //! ("kworker/3:1-events", "irq/45-nvidia"), so they group by the part before '/'.
+    QString groupName(const Process &proc)
+    {
+        if (proc.IsKernelThread)
+        {
+            const int slash = proc.Name.indexOf('/');
+            if (slash > 0)
+                return proc.Name.left(slash);
+        }
+        return proc.Name;
+    }
 }
 
 bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
 {
-    // Classic grouping instead of the full parent chain:
-    //  - kernel threads (children of kthreadd, PID 2) fold under kthreadd;
-    //  - helper processes of the same program (parent has the same name)
-    //    fold under that program, like "app (3)";
-    //  - everything else is a top-level row, so apps are never buried
-    //    under systemd / the session manager.
-    QHash<pid_t, const Process *> incomingByPid;
-    incomingByPid.reserve(processes.size());
-    for (const Process &proc : processes)
-        incomingByPid.insert(proc.PID, &proc);
+    const uid_t myUid = ::getuid();
+    const int count = static_cast<int>(processes.size());
 
-    auto groupParentPid = [&incomingByPid](const Process &proc) -> pid_t
+    // ── Which program row every process belongs to ───────────────────────────
+    // Like Windows Task Manager: one top-level row per program (systemd unit), the
+    // program's processes inside it. Apps you started are named after their desktop
+    // entry; all kernel threads share one "Linux kernel" row; a service with a single
+    // process is shown as that process. Inside a program row, same-name processes
+    // fold into one "name (N)" row.
+    QVector<QString> containerOf(count);   // "A:<app>", "K", "U:<cgroup>", "P:<pid>"
+    QVector<QString> nameOf(count);
+    QHash<QString, QString> titles;        // container -> fixed title (apps, kernel)
+    QHash<QString, QString> icons;
+    QHash<QString, int> membersOf;         // container -> process count
+    QHash<QString, int> membersByGroup;    // "<container>\n<name>" -> count
+    QHash<pid_t, int> incomingByPid;
+    incomingByPid.reserve(count);
+    for (int i = 0; i < count; ++i)
     {
-        const pid_t ppid = proc.PPID;
-        if (ppid <= 0 || ppid == proc.PID)
-            return 0;
-        const Process *pp = incomingByPid.value(ppid, nullptr);
-        if (pp && (ppid == 2 || pp->Name == proc.Name))
-            return ppid;
-        return 0;
+        const Process &proc = processes.at(i);
+        nameOf[i] = groupName(proc);
+        if (proc.IsKernelThread)
+        {
+            containerOf[i] = QStringLiteral("K");
+            titles.insert(containerOf[i], tr("Linux kernel"));
+        } else if (isUserApp(proc, myUid))
+        {
+            auto info = this->m_appInfoCache.constFind(proc.CGroup);
+            if (info == this->m_appInfoCache.cend())
+            {
+                QString name, icon;
+                if (!this->m_appRegistry || !this->m_appRegistry->AppInfoForCGroup(proc.CGroup, &name, &icon) || name.isEmpty())
+                {
+                    // No desktop entry: name the app after its unit ("app-<id>-1234.scope").
+                    name = AppRegistry::AppIdFromCGroup(proc.CGroup);
+                    if (name.isEmpty())
+                        name = proc.Name;
+                    name = name.section('.', -1);
+                }
+                // Launcher names often carry notes: "Claude (focus/open)" -> "Claude".
+                static const QRegularExpression trailingNote(QStringLiteral("\\s*\\([^)]*\\)\\s*$"));
+                name.remove(trailingNote);
+                info = this->m_appInfoCache.insert(proc.CGroup, { name, icon });
+            }
+            containerOf[i] = QStringLiteral("A:") + info->first;
+            titles.insert(containerOf[i], info->first);
+            if (!info->second.isEmpty() && !icons.contains(containerOf[i]))
+                icons.insert(containerOf[i], info->second);
+        } else if (!proc.CGroup.isEmpty() && proc.CGroup != QLatin1String("/"))
+        {
+            containerOf[i] = QStringLiteral("U:") + proc.CGroup;
+            // The login session (display manager, X server, session start-up).
+            static const QRegularExpression sessionScope(QStringLiteral("/session-[^/]+\\.scope$"));
+            if (sessionScope.match(proc.CGroup).hasMatch())
+                titles.insert(containerOf[i], tr("Desktop session"));
+        } else
+        {
+            containerOf[i] = QStringLiteral("P:") + QString::number(proc.PID);
+        }
+        ++membersOf[containerOf[i]];
+        ++membersByGroup[containerOf[i] + '\n' + nameOf[i]];
+        incomingByPid.insert(proc.PID, i);
+    }
+    if (this->m_appInfoCache.size() > 4096)
+        this->m_appInfoCache.clear();
+
+    // App and kernel rows always exist; other units only when they hold 2+ processes.
+    auto containerNeeded = [&](const QString &key)
+    {
+        return titles.contains(key) || membersOf.value(key) >= 2;
+    };
+    auto targetGroup = [&](int i) -> QString
+    {
+        return membersByGroup.value(containerOf[i] + '\n' + nameOf[i]) >= 2 ? nameOf[i] : QString();
+    };
+    // Apps go to the Apps section, everything else (incl. single-process services) to Background & system.
+    auto sectionFor = [this](const QString &key) { return this->m_sections[key.startsWith(QLatin1String("A:")) ? SectionApps : SectionSystem]; };
+    auto targetParent = [&](int i) -> Node *   // program row or section; nullptr = program row not created yet
+    {
+        return containerNeeded(containerOf[i]) ? this->m_containers.value(containerOf[i], nullptr) : sectionFor(containerOf[i]);
     };
 
-    // Incremental path: keep existing nodes, remove exited processes, insert new
-    // ones and update changed rows in place. Only touched rows are signalled, so the
-    // view repaints just those and keeps its expansion, selection and scroll
-    // position. A full reset is needed only when a surviving process moves to a
-    // different group (e.g. it was re-parented) or loses its parent but keeps children.
-    if (this->m_root)
+    // ── 1. Remove processes that exited or whose place changed ───────────────
+    QList<Node *> stale;
+    for (auto it = this->m_byPid.cbegin(); it != this->m_byPid.cend(); ++it)
     {
-        auto isAlive = [&incomingByPid](const Node *node)
+        Node *node = it.value();
+        const int i = incomingByPid.value(node->process.PID, -1);
+        bool keep = false;
+        if (i >= 0 && processes.at(i).StartTimeTicks == node->process.StartTimeTicks)
         {
-            const Process *in = incomingByPid.value(node->process.PID, nullptr);
-            return in && in->StartTimeTicks == node->process.StartTimeTicks;
-        };
-
-        bool canPatch = true;
-        QList<Node *> removedRoots;   // top-most removed nodes (their subtree goes with them)
-        for (auto it = this->m_byPid.cbegin(); canPatch && it != this->m_byPid.cend(); ++it)
-        {
-            Node *node = it.value();
-            if (isAlive(node))
-            {
-                const Process &in = *incomingByPid.value(node->process.PID);
-                const pid_t currentParent = (node->parent && node->parent != this->m_root) ? node->parent->process.PID : 0;
-                if (currentParent != groupParentPid(in))
-                    canPatch = false;
-                continue;
-            }
-            // Removed: its children must be removed too, otherwise they'd need regrouping.
-            for (const Node *child : std::as_const(node->children))
-            {
-                if (isAlive(child))
-                {
-                    canPatch = false;
-                    break;
-                }
-            }
-            if (node->parent == this->m_root || isAlive(node->parent))
-                removedRoots.append(node);
+            Node *container = targetParent(i);
+            const QString group = (container && container->kind == Kind::App) ? targetGroup(i) : QString();
+            keep = container && (group.isEmpty() ? node->parent == container
+                                                 : (node->parent->kind == Kind::Group && node->parent->parent == container && node->parent->key == group));
         }
+        if (!keep)
+            stale.append(node);
+    }
+    for (Node *node : std::as_const(stale))
+        this->removeNode(node);
 
-        if (canPatch)
+    // ── 2. Drop name groups and program rows that became empty or unneeded ───
+    for (Node *container : QList<Node *>(this->m_containers.values()))
+    {
+        for (Node *child : QList<Node *>(container->children))
         {
-            QSet<pid_t> countChanged;   // parents whose "name (N)" label changes (by PID: nodes may be freed)
+            if (child->kind == Kind::Group && (child->children.isEmpty() || membersByGroup.value(container->key + '\n' + child->key) < 2))
+                this->removeNode(child);
+        }
+        if (container->children.isEmpty() || !containerNeeded(container->key))
+            this->removeNode(container);
+    }
 
-            // 1) Remove exited processes (whole subtrees).
-            for (Node *node : std::as_const(removedRoots))
+    // ── 3. Insert new processes (creating program / group rows when needed), update the rest
+    for (int i = 0; i < count; ++i)
+    {
+        const Process &proc = processes.at(i);
+        Node *node = this->m_byPid.value(proc.PID, nullptr);
+        if (node && node->process.StartTimeTicks == proc.StartTimeTicks)
+        {
+            if (!node->process.HasSameData(proc))
             {
-                Node *parent = node->parent;
-                const int row = node->row;
-                beginRemoveRows(indexOfNode(parent), row, row);
-                parent->children.removeAt(row);
-                for (int i = row; i < parent->children.size(); ++i)
-                    parent->children[i]->row = i;
-                eraseSubtreeFromIndex(node);
-                endRemoveRows();
-                freeNode(node);   // only after Qt has dropped its references to the rows
-                if (parent != this->m_root)
-                    countChanged.insert(parent->process.PID);
-            }
-
-            // 2) Insert new processes; parents are inserted before their children.
-            std::function<Node *(const Process &)> ensureNode = [&](const Process &proc) -> Node *
-            {
-                Node *existing = this->m_byPid.value(proc.PID, nullptr);
-                if (existing && existing->process.StartTimeTicks == proc.StartTimeTicks)
-                    return existing;
-
-                const pid_t groupPid = groupParentPid(proc);
-                Node *parent = this->m_root;
-                if (groupPid > 0)
-                    parent = ensureNode(*incomingByPid.value(groupPid));
-
-                Node *node = new Node();
-                node->process = proc;
-                node->parent = parent;
-                node->row = static_cast<int>(parent->children.size());
-                beginInsertRows(indexOfNode(parent), node->row, node->row);
-                parent->children.append(node);
-                this->m_byPid.insert(proc.PID, node);
-                endInsertRows();
-                if (parent != this->m_root)
-                    countChanged.insert(parent->process.PID);
-                return node;
-            };
-
-            for (const Process &proc : processes)
-            {
-                Node *node = this->m_byPid.value(proc.PID, nullptr);
-                if (!node || node->process.StartTimeTicks != proc.StartTimeTicks)
-                {
-                    ensureNode(proc);
-                    continue;
-                }
-                // 3) Update surviving rows whose data changed.
-                if (node->process.HasSameData(proc))
-                    continue;
                 node->process = proc;
                 emit dataChanged(createIndex(node->row, 0, node), createIndex(node->row, ColCount - 1, node));
             }
-
-            for (pid_t parentPid : std::as_const(countChanged))
-            {
-                Node *parent = this->m_byPid.value(parentPid, nullptr);
-                if (!parent)
-                    continue;
-                const QModelIndex idx = createIndex(parent->row, ColName, parent);
-                emit dataChanged(idx, idx, { Qt::DisplayRole });
-            }
-            return false;
+            continue;
         }
+
+        Node *parent = targetParent(i);
+        if (!parent)
+        {
+            parent = new Node();
+            parent->kind = Kind::App;
+            parent->key = containerOf[i];
+            parent->title = titles.value(containerOf[i]);
+            parent->icon = icons.value(containerOf[i]);
+            this->appendNode(sectionFor(containerOf[i]), parent);
+            this->m_containers.insert(containerOf[i], parent);
+        }
+        const QString group = parent->kind == Kind::App ? targetGroup(i) : QString();
+        if (!group.isEmpty())
+        {
+            Node *groupNode = parent->groups.value(group, nullptr);
+            if (!groupNode)
+            {
+                groupNode = new Node();
+                groupNode->kind = Kind::Group;
+                groupNode->key = group;
+                groupNode->process.Name = group;
+                this->appendNode(parent, groupNode);
+                parent->groups.insert(group, groupNode);
+            }
+            parent = groupNode;
+        }
+
+        Node *fresh = new Node();
+        fresh->process = proc;
+        this->appendNode(parent, fresh);
+        this->m_byPid.insert(proc.PID, fresh);
     }
 
-    beginResetModel();
-    freeNode(this->m_root);
-    this->m_root = new Node();
-    this->m_byPid.clear();
-
-    QList<Node *> nodes;
-    nodes.reserve(processes.size());
-    for (const Process &proc : processes)
+    // ── 4. Totals: name groups first, then program rows ──────────────────────
+    auto refreshTotals = [this](Node *node)
     {
-        Node *node = new Node();
-        node->process = proc;
-        this->m_byPid.insert(proc.PID, node);
-        nodes.append(node);
-    }
-
-    for (Node *node : nodes)
+        int members = 0;
+        for (const Node *child : std::as_const(node->children))
+            members += child->kind == Kind::Process ? 1 : child->memberCount;
+        const Process sum = totals(node);
+        if (members == node->memberCount && node->process.HasSameData(sum))
+            return;
+        node->memberCount = members;
+        node->process = sum;
+        emit dataChanged(createIndex(node->row, 0, node), createIndex(node->row, ColCount - 1, node));
+    };
+    for (Node *container : std::as_const(this->m_containers))
     {
-        const pid_t groupPid = groupParentPid(node->process);
-        Node *parent = groupPid > 0 ? this->m_byPid.value(groupPid, this->m_root) : this->m_root;
-
-        node->parent = parent;
-        node->row = static_cast<int>(parent->children.size());
-        parent->children.append(node);
+        for (Node *child : std::as_const(container->children))
+        {
+            if (child->kind == Kind::Group)
+                refreshTotals(child);
+        }
+        refreshTotals(container);
     }
+    for (Node *section : this->m_sections)
+        refreshTotals(section);
+    return false;
+}
 
-    endResetModel();
-    return true;
+ProcessTreeModel::Node *ProcessTreeModel::appendNode(Node *parent, Node *node)
+{
+    node->parent = parent;
+    node->row = static_cast<int>(parent->children.size());
+    beginInsertRows(indexOfNode(parent), node->row, node->row);
+    parent->children.append(node);
+    endInsertRows();
+    return node;
+}
+
+void ProcessTreeModel::removeNode(Node *node)
+{
+    Node *parent = node->parent;
+    const int row = node->row;
+    beginRemoveRows(indexOfNode(parent), row, row);
+    parent->children.removeAt(row);
+    for (int i = row; i < parent->children.size(); ++i)
+        parent->children[i]->row = i;
+    eraseSubtreeFromIndex(node);
+    if (node->kind == Kind::Group)
+    {
+        const auto it = parent->groups.constFind(node->key);
+        if (it != parent->groups.cend() && it.value() == node)
+            parent->groups.erase(it);
+    } else if (node->kind == Kind::App)
+    {
+        const auto it = this->m_containers.constFind(node->key);
+        if (it != this->m_containers.cend() && it.value() == node)
+            this->m_containers.erase(it);
+    }
+    endRemoveRows();
+    freeNode(node);   // only after Qt has dropped its references to the rows
+}
+
+Process ProcessTreeModel::totals(const Node *node)
+{
+    Process sum;
+    sum.PID = 0;
+    sum.State = ' ';
+    sum.Threads = 0;
+    sum.Name = node->key;
+    sum.IOPermissionDenied = !node->children.isEmpty();
+    bool first = true;
+    QString mainName;
+    for (const Node *child : std::as_const(node->children))
+    {
+        const Process &p = child->process;
+        // Command and icon come from the member that started first: the app's main
+        // process rather than whatever helper it spawned later.
+        if (first || p.StartTimeTicks < sum.StartTimeTicks)
+        {
+            mainName = child->kind == Kind::Group ? child->key : displayName(p);
+            sum.StartTimeTicks = p.StartTimeTicks;
+            sum.IconName = p.IconName;
+            sum.CmdLine = p.CmdLine;
+        }
+        if (first)
+        {
+            sum.User = p.User;
+            sum.UID = p.UID;
+            first = false;
+        } else if (sum.User != p.User)
+        {
+            sum.User.clear();
+        }
+        sum.CPUPercent += p.CPUPercent;
+        sum.VMRssKb += p.VMRssKb;
+        sum.vmSizeKb += p.vmSizeKb;
+        sum.SharedKb += p.SharedKb;
+        sum.TextKb += p.TextKb;
+        sum.DataKb += p.DataKb;
+        sum.Threads += p.Threads;
+        sum.IOReadBytes += p.IOReadBytes;
+        sum.IOWriteBytes += p.IOWriteBytes;
+        sum.IOReadBps += p.IOReadBps;
+        sum.IOWriteBps += p.IOWriteBps;
+        sum.IOTotalsAvailable = sum.IOTotalsAvailable || p.IOTotalsAvailable;
+        sum.IORatesAvailable = sum.IORatesAvailable || p.IORatesAvailable;
+        sum.IOPermissionDenied = sum.IOPermissionDenied && p.IOPermissionDenied;
+    }
+    if (node->kind == Kind::Section)
+    {
+        sum.Name.clear();
+        sum.CmdLine.clear();
+        sum.IconName.clear();
+    }
+    if (node->kind == Kind::App)
+    {
+        // Named after the app (or the unit's main process, which started first).
+        if (!node->title.isEmpty())
+        {
+            sum.Name = node->title;
+            sum.CmdLine.clear();   // an app row stands for many programs
+        } else
+        {
+            sum.Name = mainName;
+        }
+        if (!node->icon.isEmpty())
+            sum.IconName = node->icon;
+    }
+    return sum;
+}
+
+void ProcessTreeModel::collectPids(const Node *node, QList<pid_t> &out)
+{
+    if (node->kind == Kind::Process)
+    {
+        out.append(node->process.PID);
+        return;
+    }
+    if (node->kind == Kind::Group || node->kind == Kind::App)
+    {
+        for (const Node *child : node->children)
+            collectPids(child, out);
+    }
+}
+
+QList<pid_t> ProcessTreeModel::PidsForIndex(const QModelIndex &index) const
+{
+    QList<pid_t> pids;
+    if (const Node *node = nodeFromIndex(index))
+        collectPids(node, pids);
+    return pids;
+}
+
+bool ProcessTreeModel::IsUnselectableIndex(const QModelIndex &index)
+{
+    const Node *node = nodeFromIndex(index);
+    return node && (node->kind == Kind::Section || (node->kind == Kind::App && node->key == QLatin1String("K")));
+}
+
+QModelIndex ProcessTreeModel::SectionIndex(Section section) const
+{
+    Node *node = this->m_sections[section];
+    return createIndex(node->row, 0, node);
+}
+
+bool ProcessTreeProxy::lessThan(const QModelIndex &left, const QModelIndex &right) const
+{
+    // Sections keep their order: compare rows so that the result, after the
+    // proxy reverses it for a descending sort, still puts Apps first.
+    if (!left.parent().isValid() && !right.parent().isValid())
+        return this->sortOrder() == Qt::AscendingOrder ? left.row() < right.row() : left.row() > right.row();
+    return QSortFilterProxyModel::lessThan(left, right);
 }
 
 QModelIndex ProcessTreeModel::indexOfNode(Node *node) const

@@ -161,7 +161,7 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const
 
     if (role == Qt::BackgroundRole)
     {
-        static const double cpuCapacity = 100.0 * qMax(1L, sysconf(_SC_NPROCESSORS_ONLN));
+        static constexpr double cpuCapacity = 100.0;   // CPU % is already a share of the whole CPU
         switch (static_cast<Column>(index.column()))
         {
             case ColCpu:
@@ -344,9 +344,9 @@ QList<Process> ProcessModel::RefreshSnapshot()
                 const quint64 prevTicks = this->m_prevTicks.value(proc.PID);
                 if (proc.CPUTicks >= prevTicks)
                 {
-                    const double pct = static_cast<double>(proc.CPUTicks - prevTicks) / periodPerCpu * 100.0;
-                    // Cap at 100 % × num_cpus (matches htop's MINIMUM() clamp)
-                    proc.CPUPercent = qMin(pct, 100.0 * this->m_numCpus);
+                    // Share of the whole CPU (all cores = 100 %), like Windows Task Manager.
+                    const double pct = static_cast<double>(proc.CPUTicks - prevTicks) / (periodPerCpu * this->m_numCpus) * 100.0;
+                    proc.CPUPercent = qMin(pct, 100.0);
                 }
             }
         }

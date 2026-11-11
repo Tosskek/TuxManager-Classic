@@ -30,6 +30,9 @@ class CPU
     public:
         CPU();
         ~CPU();
+        //! Reading the clock of every core costs one sysfs read per core on each sample;
+        //! it is only needed while the CPU detail page is visible.
+        void SetFrequencySamplingEnabled(bool enabled);
         CPU(const CPU &) = delete;
         CPU &operator=(const CPU &) = delete;
 
@@ -73,6 +76,7 @@ class CPU
         void readCpuMetadata();
         void detectCpuFreqSource();
         void readCurrentFreq();
+        bool m_freqSamplingEnabled { true };
         void detectCpuTemperatureSensor();
         void sampleCpuTemperature();
         void readHardwareMetadata();

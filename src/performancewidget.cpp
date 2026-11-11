@@ -169,6 +169,7 @@ PerformanceWidget::PerformanceWidget(QWidget *parent) : QWidget(parent), ui(new 
         if (detail)
             this->m_stack->setCurrentWidget(detail);
         Metrics::Get()->SetProcessStatsEnabled(item == this->m_cpuItem && CFG->PerfShowCpu);
+        Metrics::GetGPU()->SetDetailPageVisible(this->m_gpuItems.contains(item));
     });
     connect(this->m_sidePanel, &Perf::SidePanel::itemContextMenuRequested, this, &PerformanceWidget::onSidePanelContextMenu);
 
@@ -177,6 +178,7 @@ PerformanceWidget::PerformanceWidget(QWidget *parent) : QWidget(parent), ui(new 
     this->applyPanelVisibility();
     this->updateSamplingPolicy();
     Metrics::Get()->SetProcessStatsEnabled(this->m_sidePanel->GetCurrentItem() == this->m_cpuItem && CFG->PerfShowCpu);
+    Metrics::GetGPU()->SetDetailPageVisible(this->m_gpuItems.contains(this->m_sidePanel->GetCurrentItem()));
 
     this->SetActive(false);
 
@@ -720,12 +722,17 @@ void PerformanceWidget::tagTimeAxisLabels()
 
 void PerformanceWidget::applyGraphWindowSeconds()
 {
+    // The window is a time span; how many samples that is depends on the refresh
+    // rate, so this is also called whenever the rate changes.
     const int sec = CFG->PerfGraphWindowSec;
+    const int samples = CFG->PerfGraphWindowSamples();
     for (Perf::GraphWidget *g : this->findChildren<Perf::GraphWidget *>())
     {
         if (g)
-            g->SetSampleCapacity(sec);
+            g->SetSampleCapacity(samples);
     }
+    // Auto-scaled graphs (network, disk transfer...) scale to what is visible.
+    Misc::SetHistoryMaxWindow(samples);
 
     const QString labelText = Misc::SimplifyTime(sec);
 

@@ -22,8 +22,9 @@
 #define TUX_MANAGER_VERSION_STRING     "1.0.8"
 #define TUX_MANAGER_PRODUCT_NAME       "TuxManager"
 
-/// Number of historical samples kept per metric (max graph window: 15 min at 1 Hz).
-#define TUX_MANAGER_HISTORY_SIZE       900
+/// Number of historical samples kept per metric: enough for the longest graph window
+/// (15 min) at the fastest refresh rate (4 samples per second).
+#define TUX_MANAGER_HISTORY_SIZE       3600
 #define TUX_MANAGER_TASK_HISTORY       20
 
 /// Minimum dynamic rate graph scale, in bytes per second, so idle I/O graphs do not collapse to 0

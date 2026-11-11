@@ -381,6 +381,22 @@ void AppRegistry::Invalidate()
     this->m_themeIndexComplete = false;
 }
 
+bool AppRegistry::AppInfoForCGroup(const QString &cgroup_path, QString *name, QString *icon)
+{
+    this->ensureIndexed();
+    const QString app_id = AppIdFromCGroup(cgroup_path);
+    if (app_id.isEmpty())
+        return false;
+    const auto it = this->m_byId.constFind(app_id);
+    if (it == this->m_byId.cend())
+        return false;
+    if (name)
+        *name = it.value().Name;
+    if (icon)
+        *icon = it.value().Icon;
+    return true;
+}
+
 QString AppRegistry::AppIdFromCGroup(const QString &cgroup_path)
 {
     const QStringList parts = cgroup_path.split('/', Qt::SkipEmptyParts);

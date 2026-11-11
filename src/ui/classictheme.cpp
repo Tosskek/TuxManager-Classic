@@ -320,7 +320,10 @@ void ClassicTheme::SwitchAndRestart(bool dark)
     // Close windows normally (they persist geometry/settings), then relaunch.
     QTimer::singleShot(0, qApp, []()
     {
-        const QStringList args = QCoreApplication::arguments().mid(1);
+        QStringList args = QCoreApplication::arguments().mid(1);
+        // Without --replace the new process would just close this one (toggle).
+        if (!args.contains("--replace"))
+            args << "--replace";
         QProcess::startDetached(QCoreApplication::applicationFilePath(), args);
         const QList<QWidget *> windows = QApplication::topLevelWidgets();
         for (QWidget *w : windows)

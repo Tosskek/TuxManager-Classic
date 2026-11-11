@@ -354,8 +354,7 @@ bool GpuAmdSmiBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
                                       : 0.0;
             gpu.MemUsageHistory.Push(memPct);
             gpu.SharedMemHistory.Push(0.0);
-            Misc::PushHistoryAndUpdateMax(gpu.CopyTxHistory, 0.0, gpu.MaxCopyBps);
-            Misc::PushHistoryAndUpdateMax(gpu.CopyRxHistory, 0.0, gpu.MaxCopyBps);
+            Misc::PushHistoryPairAndUpdateMax(gpu.CopyTxHistory, 0.0, gpu.CopyRxHistory, 0.0, gpu.MaxCopyBps);
 
             QSet<QString> seenEngineKeys;
             auto addEngine = [&](const QString &key, const QString &label, double pct)
@@ -405,8 +404,7 @@ bool GpuAmdSmiBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu->PowerHistory.Push(0.0);
         gpu->MemUsageHistory.Push(0.0);
         gpu->SharedMemHistory.Push(0.0);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->MaxCopyBps);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
+        Misc::PushHistoryPairAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
         for (const auto &engine : gpu->Engines)
         {
             engine->Pct = 0.0;

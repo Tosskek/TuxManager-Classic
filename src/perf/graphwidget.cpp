@@ -18,13 +18,13 @@
 
 #include "graphwidget.h"
 #include "../colorscheme.h"
+#include "../configuration.h"
 #include "../ui/classictheme.h"
 #include "misc.h"
 
 #include <cmath>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPaintEvent>
 #include <QToolTip>
 #include <QtGlobal>
@@ -153,6 +153,28 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setPen(QPen(grid, 0));
 
+        // A one-pixel grid line drawn as a filled rectangle is several times cheaper
+        // than QPainter::drawLine(). The rectangle covers exactly the pixels a thin
+        // (cosmetic, non-antialiased) line would: device coordinates snapped to 1/64
+        // and rounded down, both end points included.
+        const QTransform gridTransform = p.deviceTransform();
+        const bool gridAsRects = gridTransform.type() <= QTransform::TxScale && gridTransform.m11() > 0.0 && gridTransform.m22() > 0.0;
+        auto gridLine = [&](const QPointF &from, const QPointF &to)
+        {
+            if (!gridAsRects)
+            {
+                p.drawLine(from, to);
+                return;
+            }
+            auto pixel = [](double deviceCoord) { return static_cast<qint64>(std::floor(std::round(deviceCoord * 64.0) / 64.0)); };
+            const qint64 x0 = pixel(from.x() * gridTransform.m11() + gridTransform.dx());
+            const qint64 y0 = pixel(from.y() * gridTransform.m22() + gridTransform.dy());
+            const qint64 x1 = pixel(to.x() * gridTransform.m11() + gridTransform.dx()) + 1;
+            const qint64 y1 = pixel(to.y() * gridTransform.m22() + gridTransform.dy()) + 1;
+            p.fillRect(QRectF(QPointF((x0 - gridTransform.dx()) / gridTransform.m11(), (y0 - gridTransform.dy()) / gridTransform.m22()),
+                              QPointF((x1 - gridTransform.dx()) / gridTransform.m11(), (y1 - gridTransform.dy()) / gridTransform.m22())), grid);
+        };
+
         // Denser grid on larger widgets while keeping existing configured minimum.
         const int targetGridPxX = 80;
         const int targetGridPxY = 55;
@@ -164,7 +186,7 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
         for (int i = 1; i < gridRows; ++i)
         {
             const double y = std::round((contentTop + contentHeight * i / gridRows) * dpr) / dpr;
-            p.drawLine(QPointF(contentLeft, y), QPointF(contentRight, y));
+            gridLine(QPointF(contentLeft, y), QPointF(contentRight, y));
         }
 
         // Vertical lines snap to time slots and phase-shift with sample updates.
@@ -184,7 +206,7 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
                 physX == lastX)
                 continue;
             const double x = physX / dpr;
-            p.drawLine(QPointF(x, contentTop), QPointF(x, contentBottom));
+            gridLine(QPointF(x, contentTop), QPointF(x, contentBottom));
             lastX = physX;
         }
         p.setRenderHint(QPainter::Antialiasing, true);
@@ -196,70 +218,119 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
     if (!this->m_data || this->m_data->IsEmpty())
         return;
 
-    const int n = this->m_data->Size();
-
     // Keep a fixed-width time axis:
     // - when history is short, right-align it (empty area on the left)
     // - once full, new samples push older ones off the left edge
-    const int visibleStart = qMax(0, n - sampleCount);
-    const int visibleCount = n - visibleStart;
-    const int slotOffset = qMax(0, sampleCount - visibleCount);
-
-    // Build path — left to right, newest sample on the right
-    QPainterPath path;
-    for (int i = 0; i < visibleCount; ++i)
+    //
+    // Points for both series — left to right, newest sample on the right.
+    // Slot s sits at x = contentLeft + s * stepX.
+    struct Series
     {
-        const double val = qBound(0.0, this->m_data->At(visibleStart + i), this->m_maxVal);
-        const double fx  = contentLeft + (slotOffset + i) * stepX;
-        const double fy  = contentBottom - (val / this->m_maxVal) * contentHeight;
-
-        if (i == 0)
-            path.moveTo(fx, fy);
-        else
-            path.lineTo(fx, fy);
-    }
-
-    // Filled area below the line (total user+kernel)
-    QPainterPath fillPath = path;
-    fillPath.lineTo(contentLeft + (slotOffset + visibleCount - 1) * stepX, contentBottom);
-    fillPath.lineTo(contentLeft + slotOffset * stepX, contentBottom);
-    fillPath.closeSubpath();
-
-    p.setPen(Qt::NoPen);
-    p.setBrush(this->m_fillColor);
-    p.drawPath(fillPath);
-
-    // Kernel-time overlay (secondary data2) — drawn on top as a darker fill
-    if (this->m_overlayData && !this->m_overlayData->IsEmpty())
+        QPolygonF points;
+        int       firstSlot { 0 };
+        int lastSlot() const { return this->firstSlot + static_cast<int>(this->points.size()) - 1; }
+    };
+    auto buildSeries = [&](const HistoryBuffer *data) -> Series
     {
-        const int n2 = this->m_overlayData->Size();
-        const int visibleStart2 = qMax(0, n2 - sampleCount);
-        const int visibleCount2 = n2 - visibleStart2;
-        const int slotOffset2 = qMax(0, sampleCount - visibleCount2);
-        QPainterPath kPath;
-        for (int i = 0; i < visibleCount2; ++i)
+        Series s;
+        if (!data || data->IsEmpty())
+            return s;
+        const int size = data->Size();
+        const int visibleStart = qMax(0, size - sampleCount);
+        const int visibleCount = size - visibleStart;
+        s.firstSlot = qMax(0, sampleCount - visibleCount);
+        s.points.reserve(visibleCount);
+        for (int i = 0; i < visibleCount; ++i)
         {
-            const double val = qBound(0.0, this->m_overlayData->At(visibleStart2 + i), this->m_maxVal);
-            const double fx  = contentLeft + (slotOffset2 + i) * stepX;
-            const double fy  = contentBottom - (val / this->m_maxVal) * contentHeight;
-            if (i == 0)
-                kPath.moveTo(fx, fy);
-            else
-                kPath.lineTo(fx, fy);
+            const double val = qBound(0.0, data->At(visibleStart + i), this->m_maxVal);
+            s.points.append(QPointF(contentLeft + (s.firstSlot + i) * stepX,
+                                    contentBottom - (val / this->m_maxVal) * contentHeight));
         }
-        QPainterPath kFill = kPath;
-        kFill.lineTo(contentLeft + (slotOffset2 + visibleCount2 - 1) * stepX, contentBottom);
-        kFill.lineTo(contentLeft + slotOffset2 * stepX, contentBottom);
-        kFill.closeSubpath();
-        p.setPen(Qt::NoPen);
-        p.setBrush(this->m_fillColor2);
-        p.drawPath(kFill);
-    }
+        return s;
+    };
+    const Series primary = buildSeries(this->m_data);
+    const Series overlay = buildSeries(this->m_overlayData);   // kernel time / send rate: darker fill on top
 
-    // The line itself
-    p.setPen(QPen(this->m_lineColor, 1.0));
-    p.setBrush(Qt::NoBrush);
-    p.drawPath(path);
+    // Fills the area below points[a..b]; `scratch` is reused between calls.
+    QPolygonF scratch;
+    auto fillBelow = [&](const Series &s, int a, int b, const QColor &color)
+    {
+        if (b < a)
+            return;
+        scratch.resize(0);
+        scratch.reserve(b - a + 3);
+        for (int i = a; i <= b; ++i)
+            scratch.append(s.points.at(i));
+        scratch.append(QPointF(s.points.at(b).x(), contentBottom));
+        scratch.append(QPointF(s.points.at(a).x(), contentBottom));
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        p.drawPolygon(scratch);
+    };
+    const QPen linePen(this->m_lineColor, 1.0);
+    // Paints fill, overlay fill and line for slots [slotA..slotB] of both series.
+    auto drawRange = [&](int slotA, int slotB)
+    {
+        const int a1 = qMax(0, slotA - primary.firstSlot);
+        const int b1 = qMin(static_cast<int>(primary.points.size()) - 1, slotB - primary.firstSlot);
+        fillBelow(primary, a1, b1, this->m_fillColor);
+        if (!overlay.points.isEmpty())
+        {
+            const int a2 = qMax(0, slotA - overlay.firstSlot);
+            const int b2 = qMin(static_cast<int>(overlay.points.size()) - 1, slotB - overlay.firstSlot);
+            fillBelow(overlay, a2, b2, this->m_fillColor2);
+        }
+        if (b1 >= a1)
+        {
+            p.setPen(linePen);
+            p.setBrush(Qt::NoBrush);
+            p.drawPolyline(primary.points.constData() + a1, b1 - a1 + 1);
+        }
+    };
+
+    // Qt's antialiased rasteriser gets much slower than linearly as a shape gains
+    // vertices (a 600-sample graph costs ~10x a 120-sample one). So long series are
+    // painted in column chunks, each clipped to whole device pixels and overlapping
+    // its neighbours by a few pixels of data: every pixel gets exactly the same
+    // coverage as when painting the whole shape at once, at a fraction of the cost.
+    static constexpr int kChunkMinPoints = 64;      // below this, one pass is as fast
+    static constexpr int kChunkSlots = 32;
+    static constexpr double kChunkMinPx = 24.0;     // don't make chunks narrower than this
+    static constexpr double kOverlapPx = 4.0;       // > line half-width + antialiasing reach
+    const QTransform deviceTransform = p.deviceTransform();
+    const double scaleX = deviceTransform.m11();
+    const bool canChunk = primary.points.size() >= kChunkMinPoints
+                          && deviceTransform.type() <= QTransform::TxScale
+                          && scaleX > 0.0 && stepX > 0.0;
+    const int firstSlot = overlay.points.isEmpty() ? primary.firstSlot : qMin(primary.firstSlot, overlay.firstSlot);
+    const int lastSlot = overlay.points.isEmpty() ? primary.lastSlot() : qMax(primary.lastSlot(), overlay.lastSlot());
+    if (!canChunk)
+    {
+        drawRange(firstSlot, lastSlot);
+    } else
+    {
+        const double stepPx = stepX * scaleX;
+        const int chunkSlots = qMax(kChunkSlots, static_cast<int>(std::ceil(kChunkMinPx / stepPx)));
+        const int overlapSlots = static_cast<int>(std::ceil(kOverlapPx / stepPx)) + 1;
+        auto deviceColumn = [&](double x) { return x * scaleX + deviceTransform.dx(); };
+        auto logicalX = [&](qint64 column) { return (static_cast<double>(column) - deviceTransform.dx()) / scaleX; };
+
+        qint64 clipLeft = static_cast<qint64>(std::floor(deviceColumn(-2.0)));
+        const qint64 clipEnd = static_cast<qint64>(std::ceil(deviceColumn(w + 2.0)));
+        for (int s = firstSlot; s < lastSlot; s += chunkSlots)
+        {
+            const int e = qMin(lastSlot, s + chunkSlots);
+            const qint64 clipRight = (e >= lastSlot) ? clipEnd
+                                                     : static_cast<qint64>(std::floor(deviceColumn(contentLeft + e * stepX)));
+            if (clipRight <= clipLeft)
+                continue;
+            p.save();
+            p.setClipRect(QRectF(QPointF(logicalX(clipLeft), -2.0), QPointF(logicalX(clipRight), h + 2.0)), Qt::IntersectClip);
+            drawRange(s - overlapSlots, e + overlapSlots);
+            p.restore();
+            clipLeft = clipRight;
+        }
+    }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Border
@@ -329,9 +400,11 @@ void GraphWidget::mouseMoveEvent(QMouseEvent *event)
                     tip += "\n";
                 tip += tr("%1: %2").arg(this->m_secondaryName, this->formatValue(this->m_overlayData->At(idx2)));
             }
-            const int secAgo = sampleCount - 1 - slot;
+            // One slot is one refresh interval, which is not always one second.
+            const int intervalMs = qMax(1, CFG->RefreshRateMs);
+            const double secAgo = static_cast<double>(sampleCount - 1 - slot) * intervalMs / 1000.0;
             if (!tip.isEmpty())
-                tip += tr("\n%1 s ago").arg(secAgo);
+                tip += tr("\n%1 s ago").arg(QString::number(secAgo, 'f', (intervalMs % 1000) == 0 ? 0 : 1));
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
             QToolTip::showText(event->globalPosition().toPoint(), tip, this);
 #else

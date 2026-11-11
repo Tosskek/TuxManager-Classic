@@ -33,6 +33,7 @@ class GpuNvmlBackend
         void Detect();
         bool Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus);
         bool IsAvailable() const { return this->m_available; }
+        static void SetDetailPageVisible(bool visible);
 
     private:
         void unload();

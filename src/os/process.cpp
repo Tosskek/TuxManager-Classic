@@ -215,6 +215,7 @@ namespace
     {
         QString Name;
         QString CmdLine;
+        QString CGroup;
         quint64 ReadAtGeneration { 0 };
         quint64 SeenAtGeneration { 0 };
     };
@@ -352,7 +353,25 @@ void Process::loadUserAndCmdline(int dirFd, Process &proc)
         && t_generation - entry.ReadAtGeneration < kCmdlineRefreshGenerations)
     {
         proc.CmdLine = entry.CmdLine;
+        proc.CGroup = entry.CGroup;
         return;
+    }
+
+    // cgroup (one line on cgroup v2: "0::/user.slice/...") — tells apps from services.
+    {
+        char cg[512];
+        if (readProcFile(dirFd, "cgroup", cg, sizeof(cg)) > 0)
+        {
+            const char *path = ::strstr(cg, "0::");
+            if (path)
+            {
+                path += 3;
+                const char *end = path;
+                while (*end && *end != '\n')
+                    ++end;
+                proc.CGroup = QString::fromUtf8(path, static_cast<int>(end - path));
+            }
+        }
     }
 
     QByteArray data;
@@ -378,6 +397,7 @@ void Process::loadUserAndCmdline(int dirFd, Process &proc)
 
     entry.Name = proc.Name;
     entry.CmdLine = proc.CmdLine;
+    entry.CGroup = proc.CGroup;
     entry.ReadAtGeneration = t_generation;
 }
 
@@ -430,7 +450,8 @@ QList<Process> Process::LoadAll(const LoadOptions &options)
             continue;
         }
 
-        loadStatm(dirFd, proc);
+        if (options.CollectMemoryDetails)
+            loadStatm(dirFd, proc);
         if (options.CollectIOMetrics)
         {
             if (options.IsSuperuser || proc.UID == options.EffectiveUID)

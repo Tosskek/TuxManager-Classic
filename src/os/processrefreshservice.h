@@ -44,6 +44,7 @@ namespace OS
                        bool includeKernelTasks,
                        bool includeOtherUsers,
                        bool collectIOMetrics,
+                       bool collectMemoryDetails,
                        bool isSuperuser,
                        uint effectiveUid,
                        uint myUid);
@@ -52,14 +53,28 @@ namespace OS
             void fetched(int consumer, quint64 token, const QList<Process> &processes);
 
         private:
-            QHash<pid_t, quint64> m_prevTicks;
-            QHash<pid_t, quint64> m_prevIoReadBytes;
-            QHash<pid_t, quint64> m_prevIoWriteBytes;
-            quint64               m_prevCpuTotalTicks { 0 };
-            QElapsedTimer         m_prevIoSampleTimer;
-            int                   m_numCpus { 1 };
-
-            void flushIOMetrics();
+            //! Counters of the previous measured snapshot, per process (PID + start time).
+            struct Baseline
+            {
+                quint64 CPUTicks { 0 };
+                quint64 IOReadBytes { 0 };
+                quint64 IOWriteBytes { 0 };
+                bool    IOTotalsAvailable { false };
+            };
+            //! Rates computed at the last measured snapshot, reused for snapshots that
+            //! arrive too soon after it to be measured on their own.
+            struct Rates
+            {
+                double CPUPercent { 0.0 };
+                double IOReadBps { 0.0 };
+                double IOWriteBps { 0.0 };
+                bool   IORatesAvailable { false };
+            };
+            QHash<Process::Identity, Baseline> m_baseline;
+            QHash<Process::Identity, Rates>    m_lastRates;
+            quint64                            m_prevCpuTotalTicks { 0 };
+            QElapsedTimer                      m_sampleTimer;
+            int                                m_numCpus { 1 };
     };
 
     class ProcessRefreshService : public QObject
@@ -84,6 +99,7 @@ namespace OS
                                 bool includeKernelTasks,
                                 bool includeOtherUsers,
                                 bool collectIOMetrics,
+                                bool collectMemoryDetails,
                                 bool isSuperuser,
                                 uint effectiveUid,
                                 uint myUid);

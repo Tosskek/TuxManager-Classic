@@ -62,7 +62,13 @@ namespace Misc
     bool TextContainsAnyToken(const QString &text, const QStringList &tokens);
     QString FileNameFromSymlink(const QString &path);
 
-    void PushHistoryAndUpdateMax(HistoryBuffer &vec, double val, double &cachedMax, double minMax = TUX_MANAGER_MIN_RATE);
+    //! Pushes one sample to each of two histories that share a graph scale (read/write,
+    //! send/receive...) and sets cachedMax to the largest value either one holds within
+    //! the visible graph window (see SetHistoryMaxWindow), but at least minMax.
+    void PushHistoryPairAndUpdateMax(HistoryBuffer &first, double firstVal, HistoryBuffer &second, double secondVal,
+                                     double &cachedMax, double minMax = TUX_MANAGER_MIN_RATE);
+    //! Number of newest samples the auto-scale maximum looks at (the visible graph window).
+    void SetHistoryMaxWindow(int samples);
 }
 
 #endif // MISC_H

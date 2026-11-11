@@ -70,12 +70,14 @@ class ProcessesWidget : public QWidget
 
     private:
         bool m_treeDefaultExpansionDone { false };
+        double m_snapshotCpuTotal { 0.0 };   //!< sum of CPU % of the last snapshot (header total)
+        qlonglong m_snapshotThreadTotal { 0 }; //!< sum of threads of the last snapshot (status bar)
         Ui::ProcessesWidget      *ui;
         OS::ProcessModel         *m_model;
         OS::ProcessTreeModel     *m_treeModel;
         OS::AppRegistry          *m_appRegistry { nullptr };
         OS::ProcessFilterProxy   *m_proxy;
-        QSortFilterProxyModel    *m_treeProxy;
+        OS::ProcessTreeProxy     *m_treeProxy;
         QTimer                   *m_refreshTimer;
         OS::ProcessRefreshService *m_processRefreshService { nullptr };
         QTreeView                *m_treeView { nullptr };
@@ -117,6 +119,8 @@ class ProcessesWidget : public QWidget
         void applyIconSetting();
         void captureExpandedTreePids(const QModelIndex &parentProxy, QSet<pid_t> &expandedPids) const;
         void restoreExpandedTreePids(const QModelIndex &sourceParent, const QSet<pid_t> &expandedPids);
+        void applyDefaultTreeExpansion();
+        void ensureNameColumnFits();
         void restoreTreeStateDeferred(const QSet<pid_t> &expandedPids, const QList<pid_t> &treeSelection, pid_t treeCurrentPid, int treeScroll);
 
         /// Collect PIDs of all currently selected rows.

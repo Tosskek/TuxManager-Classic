@@ -52,24 +52,46 @@ namespace
         return item ? static_cast<pid_t>(item->data(0, Qt::UserRole).toLongLong()) : 0;
     }
 
+    // Every set* call on a QTreeWidgetItem signals a change and repaints the row, so
+    // only touch what actually changed (most rows are identical between refreshes).
+    void setTextIfChanged(QTreeWidgetItem *item, int column, const QString &text)
+    {
+        if (item->text(column) != text)
+            item->setText(column, text);
+    }
+
+    void setDataIfChanged(QTreeWidgetItem *item, const QVariant &value)
+    {
+        if (item->data(0, Qt::UserRole) != value)
+            item->setData(0, Qt::UserRole, value);
+    }
+
+    void alignNumbers(QTreeWidgetItem *item)
+    {
+        const Qt::Alignment right = Qt::AlignRight | Qt::AlignVCenter;
+        if (item->textAlignment(1) != static_cast<int>(right))
+        {
+            item->setTextAlignment(1, right);
+            item->setTextAlignment(2, right);
+        }
+    }
+
     void updateUserItem(QTreeWidgetItem *item, uid_t uid, const UserAgg &agg)
     {
-        item->setText(0, QObject::tr("%1 (%2)").arg(agg.name).arg(agg.procs.size()));
-        item->setData(0, Qt::UserRole, static_cast<uint>(uid));
-        item->setText(1, QString::number(agg.cpuPct, 'f', 1) + "%");
-        item->setText(2, Misc::FormatKiB(agg.memKb, 1));
-        item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+        setTextIfChanged(item, 0, QObject::tr("%1 (%2)").arg(agg.name).arg(agg.procs.size()));
+        setDataIfChanged(item, static_cast<uint>(uid));
+        setTextIfChanged(item, 1, QString::number(agg.cpuPct, 'f', 1) + "%");
+        setTextIfChanged(item, 2, Misc::FormatKiB(agg.memKb, 1));
+        alignNumbers(item);
     }
 
     void updateProcessItem(QTreeWidgetItem *item, const OS::Process &proc)
     {
-        item->setText(0, QObject::tr("%1 (pid %2)").arg(proc.Name).arg(proc.PID));
-        item->setData(0, Qt::UserRole, static_cast<qlonglong>(proc.PID));
-        item->setText(1, QString::number(proc.CPUPercent, 'f', 1) + "%");
-        item->setText(2, Misc::FormatKiB(proc.VMRssKb, 1));
-        item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
-        item->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+        setTextIfChanged(item, 0, QObject::tr("%1 (pid %2)").arg(proc.Name).arg(proc.PID));
+        setDataIfChanged(item, static_cast<qlonglong>(proc.PID));
+        setTextIfChanged(item, 1, QString::number(proc.CPUPercent, 'f', 1) + "%");
+        setTextIfChanged(item, 2, Misc::FormatKiB(proc.VMRssKb, 1));
+        alignNumbers(item);
     }
 } // namespace
 
@@ -169,6 +191,7 @@ void UsersWidget::startRefresh()
     opts.IncludeOtherUsers = true;
     opts.MyUID = ::getuid();
     opts.CollectIOMetrics = false;
+    opts.CollectMemoryDetails = false;   // the Users tab shows CPU and RSS only
     opts.IsSuperuser = CFG->IsSuperuser;
     opts.EffectiveUID = CFG->EUID;
 

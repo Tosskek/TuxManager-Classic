@@ -52,7 +52,9 @@ class Metrics : public QObject
         void SetInterval(int ms);
         void SetActive(bool active);
         bool IsActive() const { return this->m_active; }
-        void SetProcessStatsEnabled(bool enabled) { this->m_processStatsEnabled = enabled; }
+        //! Enables the samples only the CPU detail page shows: process/thread counts
+        //! and the per-core clock frequencies.
+        void SetProcessStatsEnabled(bool enabled);
         void SetCpuSamplingEnabled(bool enabled) { this->m_cpuSamplingEnabled = enabled; }
         void SetMemorySamplingEnabled(bool enabled) { this->m_memorySamplingEnabled = enabled; }
         void SetSwapSamplingEnabled(bool enabled) { this->m_swapSamplingEnabled = enabled; }
@@ -74,7 +76,7 @@ class Metrics : public QObject
 
         QTimer *m_timer;
         int     m_intervalMs { 1000 };
-        bool    m_active { true };
+        bool    m_active { false };   //!< sampling runs only while the Performance tab is shown
         bool    m_processStatsEnabled { true };
         bool    m_cpuSamplingEnabled { true };
         bool    m_memorySamplingEnabled { true };

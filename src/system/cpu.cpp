@@ -43,6 +43,13 @@ CPU::~CPU()
     }
 }
 
+void CPU::SetFrequencySamplingEnabled(bool enabled)
+{
+    if (enabled && !this->m_freqSamplingEnabled)
+        this->readCurrentFreq();   // refresh right away so the page doesn't show an old value
+    this->m_freqSamplingEnabled = enabled;
+}
+
 double CPU::CorePercent(int i) const
 {
     if (i < 0 || i >= static_cast<int>(this->m_cores.size()))
@@ -177,7 +184,8 @@ bool CPU::Sample()
     ::fclose(f);
 
     this->sampleCpuTemperature();
-    this->readCurrentFreq();
+    if (this->m_freqSamplingEnabled)
+        this->readCurrentFreq();
     return true;
 }
 

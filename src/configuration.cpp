@@ -156,6 +156,12 @@ void Configuration::Load()
     ColorScheme::Install(scheme);
 }
 
+int Configuration::PerfGraphWindowSamples() const
+{
+    const qint64 samples = static_cast<qint64>(this->PerfGraphWindowSec) * 1000 / qMax(100, this->RefreshRateMs);
+    return static_cast<int>(qBound(static_cast<qint64>(2), samples, static_cast<qint64>(TUX_MANAGER_HISTORY_SIZE)));
+}
+
 void Configuration::Save()
 {
     QSettings s;

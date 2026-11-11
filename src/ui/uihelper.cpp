@@ -228,6 +228,8 @@ void UIHelper::AddRefreshIntervalContextMenu(QMenu *menu, QTimer *timer, bool ti
             CFG->RefreshRateMs = ms;
             Metrics::Get()->SetInterval(ms);
             PerformanceWidget *pw = PerformanceWidget::Get();
+            if (pw)
+                pw->applyGraphWindowSeconds();   // same time span = different number of samples
             if (pw && pw->IsActive())
                 pw->onProviderUpdated();
 

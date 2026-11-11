@@ -36,7 +36,7 @@ SwapGraphArea::SwapGraphArea(QWidget *parent) : QWidget(parent), m_stack(new QSt
     const ColorScheme *scheme = ColorScheme::GetCurrent();
 
     this->m_overallGraph = new GraphWidget(this->m_stack);
-    this->m_overallGraph->SetSampleCapacity(CFG->PerfGraphWindowSec);
+    this->m_overallGraph->SetSampleCapacity(CFG->PerfGraphWindowSamples());
     this->m_overallGraph->SetGridColumns(6);
     this->m_overallGraph->SetGridRows(10);
     this->m_overallGraph->SetSeriesNames(tr("Swap usage"));
@@ -146,7 +146,7 @@ void SwapGraphArea::ensureDeviceGraphs(int count)
     for (int i = 0; i < count; ++i)
     {
         GraphWidget *g = new GraphWidget(this->m_perDeviceContainer);
-        g->SetSampleCapacity(CFG->PerfGraphWindowSec);
+        g->SetSampleCapacity(CFG->PerfGraphWindowSamples());
         g->SetGridColumns(2);
         g->SetGridRows(2);
         g->SetValueFormat(GraphWidget::ValueFormat::Percent);

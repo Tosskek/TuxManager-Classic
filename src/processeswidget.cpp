@@ -17,6 +17,7 @@
  */
 
 #include "processeswidget.h"
+#include "ui/classictheme.h"
 #include "os/processhelper.h"
 #include "configuration.h"
 #include "globals.h"
@@ -59,7 +60,7 @@ ProcessesWidget::ProcessesWidget(OS::ProcessRefreshService *processRefreshServic
     , m_model(new OS::ProcessModel(this))
     , m_treeModel(new OS::ProcessTreeModel(this))
     , m_proxy(new OS::ProcessFilterProxy(this))
-    , m_treeProxy(new QSortFilterProxyModel(this))
+    , m_treeProxy(new OS::ProcessTreeProxy(this))
     , m_refreshTimer(new QTimer(this))
     , m_processRefreshService(processRefreshService)
 {
@@ -71,6 +72,16 @@ ProcessesWidget::ProcessesWidget(OS::ProcessRefreshService *processRefreshServic
     {
         this->m_proxy->setFilterFixedString(text);
         this->m_treeProxy->setFilterFixedString(text);
+        // While searching, show every match (also inside collapsed program rows);
+        // clearing the search collapses them again.
+        if (!text.isEmpty())
+            this->m_treeView->expandAll();
+        else
+        {
+            this->m_treeView->collapseAll();
+            this->m_treeDefaultExpansionDone = false;
+            this->applyDefaultTreeExpansion();   // back to: Apps open, the rest closed
+        }
     });
     connect(this->ui->runNewTaskButton, &QPushButton::clicked, this, &ProcessesWidget::runNewTask);
     connect(this->ui->openTerminalButton, &QPushButton::clicked, this, &ProcessesWidget::openTerminal);
@@ -164,12 +175,13 @@ bool ProcessesWidget::selectProcessInTree(pid_t pid)
 
 void ProcessesWidget::setupTable()
 {
-    static constexpr int PROCESS_COLUMN_SCHEMA_VERSION = 3;
+    static constexpr int PROCESS_COLUMN_SCHEMA_VERSION = 4;
     const int savedProcessColumnSchemaVersion = CFG->ProcessColumnSchemaVersion;
     const bool resetProcessHeaderState = savedProcessColumnSchemaVersion < 1;
     const bool migrateProcessNameFirstLayout = savedProcessColumnSchemaVersion < 2;
     // v3: classic column set (Name, Status, CPU, Memory, Disk) plus the new Disk column.
-    const bool applyClassicColumns = savedProcessColumnSchemaVersion < 3;
+    // v4: re-applied once for the Windows-style grouped list (one row per program).
+    const bool applyClassicColumns = savedProcessColumnSchemaVersion < 4;
     const auto classicLayout = [](QHeaderView *header)
     {
         using M = OS::ProcessModel;
@@ -208,8 +220,16 @@ void ProcessesWidget::setupTable()
 
     QTableView *tv = this->ui->tableView;
     this->m_treeView = new QTreeView(this);
-    tv->setIconSize(QSize(16, 16));
-    this->m_treeView->setIconSize(QSize(16, 16));
+
+    // The process list uses a larger font, icons and rows than the rest of the
+    // window, for readability (like Windows Task Manager's list).
+    const QFont listFont = ClassicTheme::SnapCrispFont(QStringLiteral("Arial"), 12.0);
+    tv->setFont(listFont);
+    this->m_treeView->setFont(listFont);
+    this->m_treeModel->SetBaseFont(listFont);
+    tv->setIconSize(QSize(20, 20));
+    this->m_treeView->setIconSize(QSize(20, 20));
+    this->m_treeView->setStyleSheet(QStringLiteral("QTreeView::item { padding-top: 3px; padding-bottom: 3px; }"));
     this->applyIconSetting();
 
     if (QVBoxLayout *vl = qobject_cast<QVBoxLayout *>(this->layout()))
@@ -221,10 +241,12 @@ void ProcessesWidget::setupTable()
 
     // Classic two-line headers: totals for CPU / Memory above the captions.
     {
-        const auto totalProvider = [](int logical) -> QString
+        const auto totalProvider = [this](int logical) -> QString
         {
+            // Sum of the rows: always current and consistent with them (the
+            // system-wide CPU meter only runs while the Performance tab is open).
             if (logical == OS::ProcessModel::ColCpu)
-                return QString::number(Metrics::GetCPU()->CpuPercent(), 'f', 0) + "%";
+                return QString::number(qMin(100.0, this->m_snapshotCpuTotal), 'f', 0) + "%";
             if (logical == OS::ProcessModel::ColMemRss)
             {
                 const qint64 total = Metrics::GetMemory()->MemTotalKb();
@@ -270,7 +292,7 @@ void ProcessesWidget::setupTable()
     tv->setAlternatingRowColors(false);
     tv->setTextElideMode(Qt::ElideRight);
     tv->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    tv->verticalHeader()->setDefaultSectionSize(tv->fontMetrics().height() + 10);
+    tv->verticalHeader()->setDefaultSectionSize(qMax(tv->fontMetrics().height(), tv->iconSize().height()) + 10);
 
     tv->setModel(this->m_proxy);
     tv->setSortingEnabled(true);
@@ -409,8 +431,7 @@ void ProcessesWidget::setupTable()
     this->m_treeView->setColumnHidden(OS::ProcessTreeModel::ColIoWrites, true);
     this->m_treeView->setColumnHidden(OS::ProcessTreeModel::ColIoReadsPerSec, true);
     this->m_treeView->setColumnHidden(OS::ProcessTreeModel::ColIoWritesPerSec, true);
-    connect(this->m_treeView, &QTreeView::expanded, this, [this]() { this->m_treeView->resizeColumnToContents(OS::ProcessTreeModel::ColName); });
-    connect(this->m_treeView, &QTreeView::collapsed, this, [this]() { this->m_treeView->resizeColumnToContents(OS::ProcessTreeModel::ColName); });
+    connect(this->m_treeView, &QTreeView::expanded, this, [this]() { this->ensureNameColumnFits(); });
     if (!resetProcessHeaderState && !CFG->ProcessTreeHeaderState.isEmpty())
     {
         treeHeader->restoreState(CFG->ProcessTreeHeaderState);
@@ -458,6 +479,7 @@ void ProcessesWidget::setTreeViewMode(bool enabled)
         this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot.isEmpty() ? this->m_model->GetProcesses() : this->m_lastProcessSnapshot);
         if (this->m_treeModel->rowCount() > 0)
             this->m_treeView->resizeColumnToContents(OS::ProcessTreeModel::ColName);
+        this->applyDefaultTreeExpansion();
     } else if (!this->m_lastProcessSnapshot.isEmpty())
     {
         // The flat model is not updated while the tree is shown; catch it up now.
@@ -533,6 +555,13 @@ void ProcessesWidget::startRefresh()
     options.IncludeOtherUsers = this->m_proxy->ShowOtherUsersProcs;
     options.MyUID = ::getuid();
     options.CollectIOMetrics = CFG->IOMetricsEnabled;
+    // statm is only needed for the MEM SHR / TEXT / DATA columns (hidden by default).
+    {
+        const QHeaderView *hv = this->ui->tableView->horizontalHeader();
+        options.CollectMemoryDetails = !hv->isSectionHidden(OS::ProcessModel::ColMemShared)
+                                       || !hv->isSectionHidden(OS::ProcessModel::ColMemText)
+                                       || !hv->isSectionHidden(OS::ProcessModel::ColMemData);
+    }
     options.IsSuperuser = CFG->IsSuperuser;
     options.EffectiveUID = CFG->EUID;
 
@@ -566,25 +595,27 @@ void ProcessesWidget::onRefreshFinished(int consumer, quint64 token, const QList
     if (!this->m_treeViewMode)
     {
         tableSnapshot = UIHelper::CaptureTableSelection(this->ui->tableView, OS::ProcessModel::ColPid, std::bind(&ProcessesWidget::tableSelectionKeyFromProxy, this, std::placeholders::_1));
-    } else
-    {
-        treeSelection = this->selectedPids();
-        this->captureExpandedTreePids(QModelIndex(), expandedPids);
-
-        if (QItemSelectionModel *sel = this->m_treeView->selectionModel())
-        {
-            const QModelIndex cur = sel->currentIndex();
-            if (cur.isValid())
-            {
-                const QModelIndex src = this->m_treeProxy->mapToSource(cur.sibling(cur.row(), OS::ProcessTreeModel::ColPid));
-                if (src.isValid())
-                    treeCurrentPid = static_cast<pid_t>(this->m_treeModel->data(src, Qt::UserRole).toLongLong());
-            }
-        }
-        if (QScrollBar *sb = this->m_treeView->verticalScrollBar())
-            treeScroll = sb->value();
     }
+    // Tree mode needs no capture: the tree model updates rows in place, so the view
+    // keeps expansion, selection and scroll position by itself.
     this->m_lastProcessSnapshot = processes;
+    this->m_snapshotCpuTotal = 0.0;
+    this->m_snapshotThreadTotal = 0;
+    for (const OS::Process &proc : std::as_const(this->m_lastProcessSnapshot))
+    {
+        this->m_snapshotCpuTotal += proc.CPUPercent;
+        this->m_snapshotThreadTotal += qMax(0, proc.Threads);
+    }
+    // Memory and disk totals in the header come from the system meters, which only
+    // sample while the Performance tab is open; refresh the cheap ones here.
+    if (!Metrics::Get()->IsActive())
+    {
+        Metrics::GetMemory()->Sample();
+        Metrics::GetStorage()->Sample();
+    }
+    if (QHeaderView *h = this->m_treeView->header())
+        h->viewport()->update();
+    this->ui->tableView->horizontalHeader()->viewport()->update();
     if (this->m_appRegistry)
         this->m_appRegistry->Annotate(this->m_lastProcessSnapshot);
 
@@ -594,6 +625,7 @@ void ProcessesWidget::onRefreshFinished(int consumer, quint64 token, const QList
         // refilled from m_lastProcessSnapshot when switching back to table mode).
         if (this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot))
             this->restoreTreeStateDeferred(expandedPids, treeSelection, treeCurrentPid, treeScroll);
+        this->applyDefaultTreeExpansion();
         this->updateStatusBar();
     } else
     {
@@ -923,17 +955,20 @@ void ProcessesWidget::onTreeContextMenu(const QPoint &pos)
 
 void ProcessesWidget::updateStatusBar()
 {
-    const QList<OS::Process> &all = this->m_lastProcessSnapshot.isEmpty()
-                                    ? this->m_model->GetProcesses()
-                                    : this->m_lastProcessSnapshot;
-    const int totalTasks = all.size();
-
-    qlonglong totalThreads = 0;
-    for (const OS::Process &p : all)
-        totalThreads += qMax(0, p.Threads);
+    // Called for every inserted / removed row; the totals are computed once per snapshot.
+    qlonglong totalThreads = this->m_snapshotThreadTotal;
+    int totalTasks = static_cast<int>(this->m_lastProcessSnapshot.size());
+    if (this->m_lastProcessSnapshot.isEmpty())
+    {
+        const QList<OS::Process> &all = this->m_model->GetProcesses();
+        totalTasks = static_cast<int>(all.size());
+        totalThreads = 0;
+        for (const OS::Process &p : all)
+            totalThreads += qMax(0, p.Threads);
+    }
     const QString text = tr("Tasks: %1  Threads: %2").arg(totalTasks).arg(totalThreads);
-
-    this->ui->statusLabel->setText(text);
+    if (this->ui->statusLabel->text() != text)
+        this->ui->statusLabel->setText(text);
 }
 
 void ProcessesWidget::copyRowSelectionToClipboard()
@@ -1126,6 +1161,62 @@ void ProcessesWidget::restoreExpandedTreePids(const QModelIndex &sourceParent, c
     }
 }
 
+void ProcessesWidget::ensureNameColumnFits()
+{
+    // Widen (never narrow) the Name column so the section titles and the visible
+    // program names are not cut off. Measured by hand: the view's own measurement
+    // ignores the bold section font.
+    QHeaderView *header = this->m_treeView ? this->m_treeView->header() : nullptr;
+    if (!header)
+        return;
+    const QFont base = this->m_treeView->font();
+    QFont bold = base;
+    bold.setBold(true);
+    const QFontMetrics fm(base), fmBold(bold);
+    const int indent = this->m_treeView->indentation();
+    const int icon = this->m_treeView->iconSize().width();
+    int needed = 0;
+    std::function<void(const QModelIndex &, int)> measure = [&](const QModelIndex &parent, int depth)
+    {
+        for (int r = 0; r < this->m_treeProxy->rowCount(parent); ++r)
+        {
+            const QModelIndex idx = this->m_treeProxy->index(r, OS::ProcessTreeModel::ColName, parent);
+            const QString text = idx.data(Qt::DisplayRole).toString();
+            const bool isBold = idx.data(Qt::FontRole).value<QFont>().bold();
+            const int width = indent * (depth + 1) + icon + 12 + (isBold ? fmBold : fm).horizontalAdvance(text);
+            needed = qMax(needed, width);
+            if (this->m_treeView->isExpanded(idx) && depth < 2)
+                measure(idx, depth + 1);
+        }
+    };
+    measure(QModelIndex(), 0);
+    if (header->sectionSize(OS::ProcessTreeModel::ColName) < needed)
+        header->resizeSection(OS::ProcessTreeModel::ColName, needed);
+}
+
+void ProcessesWidget::applyDefaultTreeExpansion()
+{
+    // Apps open, Background & system closed — once, so the user's own
+    // expanding / collapsing afterwards is kept.
+    if (this->m_treeDefaultExpansionDone || !this->m_treeView || this->m_treeModel->rowCount() == 0)
+        return;
+    const QModelIndex apps = this->m_treeProxy->mapFromSource(this->m_treeModel->SectionIndex(OS::ProcessTreeModel::SectionApps));
+    if (!apps.isValid())
+        return;
+    this->m_treeView->expand(apps);
+    this->m_treeDefaultExpansionDone = true;
+
+    // Make room for "Background & system (123)" and program names (never narrower
+    // than the width the user chose). Deferred: the view lays out new rows later.
+    QTimer::singleShot(0, this, [this]()
+    {
+        QHeaderView *header = this->m_treeView ? this->m_treeView->header() : nullptr;
+        if (!header)
+            return;
+        this->ensureNameColumnFits();
+    });
+}
+
 void ProcessesWidget::restoreTreeStateDeferred(const QSet<pid_t> &expandedPids,
                                                const QList<pid_t> &treeSelection,
                                                pid_t treeCurrentPid,
@@ -1185,9 +1276,12 @@ QList<pid_t> ProcessesWidget::selectedPids() const
         pids.reserve(rows.size());
         for (const QModelIndex &proxyIdx : rows)
         {
-            const QModelIndex srcIdx = this->m_treeProxy->mapToSource(proxyIdx);
-            const QVariant v = this->m_treeModel->data(srcIdx, Qt::UserRole);
-            pids.append(static_cast<pid_t>(v.toLongLong()));
+            // A group row stands for all of its members (End task ends them all).
+            for (pid_t pid : this->m_treeModel->PidsForIndex(this->m_treeProxy->mapToSource(proxyIdx)))
+            {
+                if (pid > 0 && !pids.contains(pid))
+                    pids.append(pid);
+            }
         }
     }
     return pids;

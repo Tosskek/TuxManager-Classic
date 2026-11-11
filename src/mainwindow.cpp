@@ -61,7 +61,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     this->updateTabActivity(this->ui->tabWidget->currentIndex());
 
     // Update-speed toggle (1x = 1 s <-> 2x = 0.5 s), graph timeline toggle
-    // (1 min <-> 2 min) plus the light / dark switch in the top-right corner of the tab bar.
+    // (1 min -> 2 min -> 5 min) plus the light / dark switch in the top-right corner of the tab bar.
     {
         QWidget *corner = new QWidget(this->ui->tabWidget);
         QHBoxLayout *cornerLayout = new QHBoxLayout(corner);
@@ -85,6 +85,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             CFG->RefreshPaused = false;
             CFG->RefreshRateMs = ms;
             Metrics::Get()->SetInterval(ms);
+            this->m_performanceWidget->applyGraphWindowSeconds();   // same time span = different number of samples
             // Only the visible tab has a running timer; the others pick the rate up when activated.
             this->m_processesWidget->ApplyRefreshRate();
             this->m_usersWidget->ApplyRefreshRate();
@@ -93,10 +94,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
 
         cornerLayout->addSpacing(6);
-        this->m_timeToggle = makeToggle(tr("Toggle graph timeline: 1 min / 2 min"));
+        this->m_timeToggle = makeToggle(tr("Toggle graph timeline: 1 min / 2 min / 5 min"));
         connect(this->m_timeToggle, &QToolButton::clicked, this, [this]()
         {
-            CFG->PerfGraphWindowSec = (CFG->PerfGraphWindowSec == 60) ? 120 : 60;
+            // Cycle 1 min -> 2 min -> 5 min -> 1 min (any other value goes to 1 min).
+            const int sec = CFG->PerfGraphWindowSec;
+            CFG->PerfGraphWindowSec = sec == 60 ? 120 : sec == 120 ? 300 : 60;
             this->m_performanceWidget->applyGraphWindowSeconds();
             if (this->m_performanceWidget->IsActive())
                 this->m_performanceWidget->onProviderUpdated();

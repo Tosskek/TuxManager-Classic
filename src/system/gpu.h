@@ -77,6 +77,9 @@ class GPU
 
         /// Sample GPU backends (NVML when available) and update utilization/memory/engine histories.
         bool Sample();
+        //! The GPU detail page shows PCIe copy bandwidth; while it is hidden the (costly)
+        //! PCIe counter read runs on every 5th sample only.
+        void SetDetailPageVisible(bool visible);
 
         int GpuCount() const { return static_cast<int>(this->m_gpus.size()); }
         const GPUInfo &FromIndex(int gpuIndex) const;

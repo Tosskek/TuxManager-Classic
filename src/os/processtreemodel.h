@@ -22,7 +22,9 @@
 #include "process.h"
 
 #include <QAbstractItemModel>
+#include <QFont>
 #include <QHash>
+#include <QSortFilterProxyModel>
 
 namespace OS
 {
@@ -68,23 +70,56 @@ namespace OS
             QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
             Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-            //! Updates the tree. Returns true when the model had to be reset (the set of
-            //! processes or their grouping changed); otherwise rows were updated in place.
+            //! Top-level sections, in display order.
+            enum Section
+            {
+                SectionApps = 0,     ///< Programs the user started (app-*.scope / app-*@.service cgroups)
+                SectionSystem,       ///< Desktop services, autostart helpers, other users, kernel threads
+                SectionCount
+            };
+
+            //! Updates the tree in place: exited processes are removed, new ones inserted,
+            //! changed rows signalled. Always returns false (kept for API compatibility).
+            //!
+            //! Layout: two sections, Apps and Background & system. In them, one row per program, i.e. per
+            //! systemd unit — apps you started are named after their desktop entry, kernel
+            //! threads share one "Linux kernel" row, a single-process service is just that
+            //! process. Inside a program row, same-name processes fold into "name (N)".
+            //! Program and group rows show the totals of their members.
             bool SetProcesses(const QList<Process> &processes);
+            //! PIDs a row stands for: one for a process, all members for a program / group row.
+            QList<pid_t> PidsForIndex(const QModelIndex &index) const;
+            //! True for rows that must not be selected / ended (section headers, "Linux kernel").
+            static bool IsUnselectableIndex(const QModelIndex &index);
+            //! Index (column 0) of a section row.
+            QModelIndex SectionIndex(Section section) const;
             /// Registry used to provide icons for the name column; nullptr disables icons.
             void SetAppRegistry(AppRegistry *registry) { this->m_appRegistry = registry; }
             QModelIndex IndexForPid(pid_t pid) const;
+            //! Font of the view, used as the base for bold section headers.
+            void SetBaseFont(const QFont &font) { this->m_baseFont = font; }
 
         private:
+            enum class Kind { Process, Group, App, Section };
             struct Node
             {
-                Process process;
+                Process process;     //!< the process, or the totals of a group / app / section
+                Kind kind { Kind::Process };
+                QString key;         //!< group: process name it folds; program row: unit key ("A:Claude", "K", "U:<cgroup>")
+                QString title;       //!< program row: fixed title (app name, "Linux kernel"); empty = main process name
+                QString icon;        //!< program row: icon from the app's desktop entry
+                QHash<QString, Node *> groups; //!< program row: name -> group child
+                int memberCount { 0 }; //!< group/section: number of processes inside
                 Node *parent { nullptr };
                 QList<Node *> children;
                 int row { 0 };   //!< index in parent->children (avoids O(n) indexOf lookups)
             };
 
             Node *m_root { nullptr };
+            QFont m_baseFont;
+            Node *m_sections[SectionCount] {};
+            QHash<QString, Node *> m_containers;             //!< unit key -> program row
+            QHash<QString, QPair<QString, QString>> m_appInfoCache; //!< cgroup -> (app name, icon)
             AppRegistry *m_appRegistry { nullptr };
             QHash<pid_t, Node *> m_byPid;
 
@@ -93,6 +128,26 @@ namespace OS
             QModelIndex indexOfNode(Node *node) const;
             void eraseSubtreeFromIndex(Node *node);
             static Node *nodeFromIndex(const QModelIndex &index);
+            void removeNode(Node *node);
+            Node *appendNode(Node *parent, Node *node);
+            static void collectPids(const Node *node, QList<pid_t> &out);
+            static Process totals(const Node *node);
+    };
+}
+
+namespace OS
+{
+    //! Sorting proxy for the process tree that keeps the sections in their fixed
+    //! order (Apps first) whatever column / direction is sorted.
+    class ProcessTreeProxy : public QSortFilterProxyModel
+    {
+        Q_OBJECT
+
+        public:
+            using QSortFilterProxyModel::QSortFilterProxyModel;
+
+        protected:
+            bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
     };
 }
 

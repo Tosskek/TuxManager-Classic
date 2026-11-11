@@ -841,8 +841,7 @@ bool GpuIntelSysmanBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &g
                     this->m_prevPciTxById.insert(id, {stats.txCounter, stats.timestamp});
                 }
             }
-            Misc::PushHistoryAndUpdateMax(gpu.CopyTxHistory, gpu.CopyTxBps, gpu.MaxCopyBps);
-            Misc::PushHistoryAndUpdateMax(gpu.CopyRxHistory, gpu.CopyRxBps, gpu.MaxCopyBps);
+            Misc::PushHistoryPairAndUpdateMax(gpu.CopyTxHistory, gpu.CopyTxBps, gpu.CopyRxHistory, gpu.CopyRxBps, gpu.MaxCopyBps);
 
             seenIds.insert(id);
         }
@@ -867,8 +866,7 @@ bool GpuIntelSysmanBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &g
         gpu->PowerHistory.Push(0.0);
         gpu->MemUsageHistory.Push(0.0);
         gpu->SharedMemHistory.Push(0.0);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->MaxCopyBps);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
+        Misc::PushHistoryPairAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
         for (const auto &engine : gpu->Engines)
         {
             engine->Pct = 0.0;

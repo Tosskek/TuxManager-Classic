@@ -67,6 +67,10 @@ namespace OS
             /// Exposed for documentation of the unit naming scheme; see docs/process-icons.md.
             static QString AppIdFromCGroup(const QString &cgroup_path);
 
+            /// Desktop-entry name and icon of the app a cgroup belongs to. Returns false when
+            /// the cgroup is not an app unit or no desktop entry matches.
+            bool AppInfoForCGroup(const QString &cgroup_path, QString *name, QString *icon);
+
         private:
             struct DesktopEntry
             {

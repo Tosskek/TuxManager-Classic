@@ -80,13 +80,22 @@ Metrics::Metrics(QObject *parent) : QObject(parent)
     // Prime baselines — first real sample will have valid deltas.
     this->sampleNow();
 
-    this->m_timer->start(this->m_intervalMs);
+    // The timer starts in SetActive(true), when the Performance tab is shown. It used
+    // to start here, and since the tab's initial SetActive(false) was a no-op, all
+    // sampling (CPU, disks, network, NVIDIA GPU) ran in the background on every other
+    // tab until the Performance tab had been opened and left once.
 }
 
 void Metrics::SetInterval(int ms)
 {
     this->m_intervalMs = qMax(100, ms);
     this->m_timer->setInterval(this->m_intervalMs);
+}
+
+void Metrics::SetProcessStatsEnabled(bool enabled)
+{
+    this->m_processStatsEnabled = enabled;
+    Metrics::GetCPU()->SetFrequencySamplingEnabled(enabled);
 }
 
 void Metrics::SetActive(bool active)

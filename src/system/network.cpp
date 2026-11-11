@@ -248,8 +248,7 @@ bool Network::Sample()
         {
             n->RxBps = 0.0;
             n->TxBps = 0.0;
-            Misc::PushHistoryAndUpdateMax(n->RxHistory, 0.0, n->MaxThroughputBps);
-            Misc::PushHistoryAndUpdateMax(n->TxHistory, 0.0, n->MaxThroughputBps);
+            Misc::PushHistoryPairAndUpdateMax(n->RxHistory, 0.0, n->TxHistory, 0.0, n->MaxThroughputBps);
             continue;
         }
 
@@ -258,8 +257,7 @@ bool Network::Sample()
         {
             n->PrevRxBytes = c.rxBytes;
             n->PrevTxBytes = c.txBytes;
-            Misc::PushHistoryAndUpdateMax(n->RxHistory, 0.0, n->MaxThroughputBps);
-            Misc::PushHistoryAndUpdateMax(n->TxHistory, 0.0, n->MaxThroughputBps);
+            Misc::PushHistoryPairAndUpdateMax(n->RxHistory, 0.0, n->TxHistory, 0.0, n->MaxThroughputBps);
             continue;
         }
 
@@ -270,8 +268,7 @@ bool Network::Sample()
 
         n->RxBps = static_cast<double>(dRx) * 1000.0 / static_cast<double>(dtMs);
         n->TxBps = static_cast<double>(dTx) * 1000.0 / static_cast<double>(dtMs);
-        Misc::PushHistoryAndUpdateMax(n->RxHistory, n->RxBps, n->MaxThroughputBps);
-        Misc::PushHistoryAndUpdateMax(n->TxHistory, n->TxBps, n->MaxThroughputBps);
+        Misc::PushHistoryPairAndUpdateMax(n->RxHistory, n->RxBps, n->TxHistory, n->TxBps, n->MaxThroughputBps);
     }
 
     return true;

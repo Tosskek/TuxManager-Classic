@@ -27,16 +27,97 @@
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <QIcon>
+#include <QElapsedTimer>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QThread>
 #include <QFont>
 #include <QPalette>
 #include <QStyleFactory>
 #include <cstdio>
 #include <cstring>
+#include <csignal>
+#include <sys/socket.h>
+#include <unistd.h>
 
 // Pre-screen --help / --version before QApplication so they work without a display.
 static void print_version()
 {
     printf("%s %s\n", TUX_MANAGER_PRODUCT_NAME, TUX_MANAGER_VERSION_STRING);
+}
+
+// ── Single instance ───────────────────────────────────────────────────────────
+// Launching Tux Manager while it is already running toggles it: the new process
+// asks the running one to close normally (so it saves its settings), kills it if
+// it does not exit in time, and then exits without opening a window. So the
+// hotkey opens, closes, opens... With --replace (used by the dark-mode restart)
+// the new process opens its own window after the old one is gone.
+
+static QString instanceServerName()
+{
+    // TUX_MANAGER_INSTANCE lets a second, independent copy run (used for testing).
+    const QString suffix = qEnvironmentVariable("TUX_MANAGER_INSTANCE");
+    return QString("tux-manager-%1%2").arg(::getuid()).arg(suffix.isEmpty() ? QString() : "-" + suffix);
+}
+
+//! Closes a running instance. Returns true when one was running.
+static bool closeRunningInstance()
+{
+    QLocalSocket socket;
+    socket.connectToServer(instanceServerName());
+    if (!socket.waitForConnected(500))
+        return false; // nobody running
+
+    // PID of the running instance from the socket's peer credentials; this works
+    // even when that instance is frozen and can't answer.
+    qint64 oldPid = 0;
+    struct ucred cred{};
+    socklen_t credLen = sizeof(cred);
+    if (::getsockopt(static_cast<int>(socket.socketDescriptor()), SOL_SOCKET, SO_PEERCRED, &cred, &credLen) == 0)
+        oldPid = cred.pid;
+
+    // Ask it to close normally; it answers with its PID before closing.
+    socket.write("quit\n");
+    socket.flush();
+    if (socket.waitForReadyRead(1000) && oldPid <= 0)
+        oldPid = socket.readLine().trimmed().toLongLong();
+
+    QElapsedTimer timer;
+    timer.start();
+    while (socket.state() != QLocalSocket::UnconnectedState && timer.elapsed() < 3000)
+        socket.waitForDisconnected(100);
+
+    // Wait until the process is really gone (its settings are written on close).
+    while (oldPid > 0 && ::kill(static_cast<pid_t>(oldPid), 0) == 0 && timer.elapsed() < 3000)
+        QThread::msleep(50);
+
+    if (oldPid > 0 && ::kill(static_cast<pid_t>(oldPid), 0) == 0)
+    {
+        LOG_INFO(QString("Previous instance %1 did not exit, killing it").arg(oldPid));
+        ::kill(static_cast<pid_t>(oldPid), SIGKILL);
+        QThread::msleep(100);
+    }
+    return true;
+}
+
+static void listenForNewInstances(QLocalServer &server, QWidget *window)
+{
+    QLocalServer::removeServer(instanceServerName()); // stale socket from a crash
+    if (!server.listen(instanceServerName()))
+        return;
+
+    QObject::connect(&server, &QLocalServer::newConnection, &server, [&server, window]()
+    {
+        while (QLocalSocket *client = server.nextPendingConnection())
+        {
+            client->write(QByteArray::number(static_cast<qint64>(::getpid())) + "\n");
+            client->flush();
+            client->waitForBytesWritten(500);
+            // Close the window normally (saves geometry/settings), then exit.
+            window->close();
+            QCoreApplication::quit();
+        }
+    });
 }
 
 static void print_help()
@@ -76,6 +157,12 @@ int main(int argc, char *argv[])
         qputenv("FREETYPE_PROPERTIES", "truetype:interpreter-version=35");
     }
 
+    // Qt's raster painter splits large fills (every graph background at 4K) across a
+    // thread pool; waking those threads on every repaint cost ~30% of the Performance
+    // tab's CPU, more than the fills themselves. Paint on the GUI thread only.
+    if (!qEnvironmentVariableIsSet("QT_NO_GUI_THREADPOOL"))
+        qputenv("QT_NO_GUI_THREADPOOL", "1");
+
     // Render the UI at 0.9 (90%) size by default.
     // Override with e.g. TUX_MANAGER_SCALE=1.0 or QT_SCALE_FACTOR without rebuilding.
     if (!qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
@@ -106,6 +193,8 @@ int main(int argc, char *argv[])
     parser.addOption(verboseOption);
     QCommandLineOption forceDrmOption(QStringList{"force-drm"}, "Force DRM GPU backend and skip NVML detection.");
     parser.addOption(forceDrmOption);
+    QCommandLineOption replaceOption(QStringList{"replace"}, "If Tux Manager is already running, close it and open a new window (default: just close it).");
+    parser.addOption(replaceOption);
 
     parser.process(a);
 
@@ -123,6 +212,10 @@ int main(int argc, char *argv[])
     }
     Logger::instance()->Verbosity = verbosity;
 
+    // ── Single instance: launching again closes the running window (toggle) ──
+    if (closeRunningInstance() && !parser.isSet(replaceOption))
+        return 0;
+
     // ── Bootstrap ─────────────────────────────────────────────────────────────
     CFG->Load();
     CFG->ForceGpuDrm = parser.isSet(forceDrmOption);
@@ -134,6 +227,8 @@ int main(int argc, char *argv[])
     LOG_INFO(QString("%1 %2 starting (verbosity=%3)").arg(a.applicationName(), a.applicationVersion()).arg(verbosity));
 
     MainWindow w;
+    QLocalServer instanceServer;
+    listenForNewInstances(instanceServer, &w);
     w.show();
     return a.exec();
 }

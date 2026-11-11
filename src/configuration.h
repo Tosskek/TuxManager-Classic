@@ -97,6 +97,9 @@ class Configuration : public QObject
         bool SidePanelGridEnabled { false };
         bool PerfNetworkUseBits { true };
         int PerfGraphWindowSec { 60 };
+        //! Number of samples that span the graph window at the current refresh rate
+        //! (e.g. 1 min at 2 updates per second = 120 samples).
+        int PerfGraphWindowSamples() const;
         QStringList PerfSidePanelGroupOrder;
         QByteArray PerformanceSplitterState;   ///< Saved via QSplitter::saveState()
 

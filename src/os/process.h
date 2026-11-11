@@ -43,6 +43,7 @@ namespace OS
                 bool  IncludeOtherUsers   { true };
                 uid_t MyUID               { 0 };
                 bool  CollectIOMetrics    { false };
+                bool  CollectMemoryDetails { true };  ///< read /proc/pid/statm (shared/text/data); RSS and virtual size come from stat anyway
                 bool  IsSuperuser         { false };
                 uid_t EffectiveUID        { 0 };
             };
@@ -74,6 +75,7 @@ namespace OS
             bool    IORatesAvailable { false };  ///< True when a previous I/O sample exists.
             bool    IOPermissionDenied { false }; ///< True when I/O metrics were skipped due to permissions.
             QString IconName;                 ///< Theme icon name or absolute icon path resolved by AppRegistry, empty for generic
+            QString CGroup;                   ///< cgroup v2 path (/proc/pid/cgroup), e.g. .../app.slice/app-firefox-1234.scope
 
             /// Load a snapshot of every running process from /proc.
             static QList<Process> LoadAll();

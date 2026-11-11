@@ -64,6 +64,29 @@ namespace
         unsigned int decUtil;
     };
 
+    // nvmlFieldValue_t: used for the PCIe byte counters.
+    struct NvmlFieldValue
+    {
+        unsigned int fieldId;
+        unsigned int scopeId;
+        long long    timestamp;     // microseconds
+        long long    latencyUsec;
+        unsigned int valueType;     // 0=double 1=uint 2=ulong 3=ulonglong 4=longlong 5=int 6=ushort
+        NvmlReturn   nvmlReturn;
+        union
+        {
+            double             dVal;
+            unsigned int       uiVal;
+            unsigned long      ulVal;
+            unsigned long long ullVal;
+            signed long long   sllVal;
+            int                siVal;
+            unsigned short     usVal;
+        } value;
+    };
+    static constexpr unsigned int kNvmlFiPcieCountTxBytes = 197;
+    static constexpr unsigned int kNvmlFiPcieCountRxBytes = 198;
+
     static constexpr NvmlReturn NVML_SUCCESS = 0;
 
     using FnNvmlInitV2 = NvmlReturn (*)();
@@ -85,10 +108,65 @@ namespace
     using FnNvmlDeviceGetGraphicsRunningProcesses = NvmlReturn (*)(NvmlDevice, unsigned int *, NvmlProcessInfo_v2 *);
     using FnNvmlDeviceGetComputeRunningProcesses = NvmlReturn (*)(NvmlDevice, unsigned int *, NvmlProcessInfo_v2 *);
     using FnNvmlDeviceGetProcessUtilization = NvmlReturn (*)(NvmlDevice, NvmlProcessUtilizationSample *, unsigned int *, uint64_t);
+    using FnNvmlDeviceGetFieldValues = NvmlReturn (*)(NvmlDevice, int, NvmlFieldValue *);
 
     FnNvmlDeviceGetGraphicsRunningProcesses pNvmlDeviceGetGraphicsRunningProcesses = nullptr;
     FnNvmlDeviceGetComputeRunningProcesses pNvmlDeviceGetComputeRunningProcesses = nullptr;
     FnNvmlDeviceGetProcessUtilization pNvmlDeviceGetProcessUtilization = nullptr;
+    FnNvmlDeviceGetFieldValues pNvmlDeviceGetFieldValues = nullptr;
+
+    // PCIe traffic from the driver's byte counters: one sub-millisecond call instead of
+    // nvmlDeviceGetPcieThroughput(), which measures (and blocks) for 20 ms per direction.
+    // The rate is the true average since the previous sample. Drivers without the
+    // counters fall back to the throughput call on a helper thread.
+    enum class PcieSource { Unknown, Counters, ThroughputThread };
+    PcieSource g_pcieSource = PcieSource::Unknown;
+    struct PcieCounterState
+    {
+        bool               valid { false };
+        bool               is32Bit { false };
+        unsigned long long tx { 0 };
+        unsigned long long rx { 0 };
+        long long          timestampUs { 0 };
+    };
+    QHash<NvmlDevice, PcieCounterState> g_pcieCounters;
+    // The counter read is a firmware round trip (~0.45 ms, most of the GPU sampling
+    // cost). Its values are only shown on the GPU detail page, so while that page is
+    // hidden it is read on every 5th sample; the counters are cumulative, so the rate
+    // is then the exact average over those samples.
+    bool g_detailPageVisible = false;
+    unsigned int g_pcieSampleCounter = 0;
+    static constexpr unsigned int kHiddenPcieEvery = 5;
+    QHash<NvmlDevice, std::pair<double, double>> g_lastPcieRates;   // device -> (tx, rx) bytes/s
+
+    //! Reads both PCIe byte counters. Returns false when the driver doesn't provide them.
+    bool readPcieCounters(NvmlDevice dev, PcieCounterState &out)
+    {
+        if (!pNvmlDeviceGetFieldValues)
+            return false;
+        NvmlFieldValue fields[2] = {};
+        fields[0].fieldId = kNvmlFiPcieCountTxBytes;
+        fields[1].fieldId = kNvmlFiPcieCountRxBytes;
+        if (pNvmlDeviceGetFieldValues(dev, 2, fields) != NVML_SUCCESS)
+            return false;
+        auto toCounter = [&out](const NvmlFieldValue &f, unsigned long long &value) -> bool
+        {
+            if (f.nvmlReturn != NVML_SUCCESS)
+                return false;
+            switch (f.valueType)
+            {
+                case 1: value = f.value.uiVal; out.is32Bit = true; return true;
+                case 2: value = f.value.ulVal; return true;
+                case 3: value = f.value.ullVal; return true;
+                default: return false;
+            }
+        };
+        if (!toCounter(fields[0], out.tx) || !toCounter(fields[1], out.rx))
+            return false;
+        out.timestampUs = fields[0].timestamp;
+        out.valid = true;
+        return true;
+    }
 
     FnNvmlInitV2 pNvmlInitV2 = nullptr;
     FnNvmlShutdown pNvmlShutdown = nullptr;
@@ -179,6 +257,11 @@ struct GpuNvmlBackend::PcieWorker
 
 GpuNvmlBackend::GpuNvmlBackend() = default;
 
+void GpuNvmlBackend::SetDetailPageVisible(bool visible)
+{
+    g_detailPageVisible = visible;
+}
+
 GpuNvmlBackend::~GpuNvmlBackend()
 {
     this->unload();
@@ -234,6 +317,7 @@ void GpuNvmlBackend::Detect()
     pNvmlDeviceGetGraphicsRunningProcesses = reinterpret_cast<FnNvmlDeviceGetGraphicsRunningProcesses>(::dlsym(this->m_libHandle, "nvmlDeviceGetGraphicsRunningProcesses_v3"));
     pNvmlDeviceGetComputeRunningProcesses = reinterpret_cast<FnNvmlDeviceGetComputeRunningProcesses>(::dlsym(this->m_libHandle, "nvmlDeviceGetComputeRunningProcesses_v3"));
     pNvmlDeviceGetProcessUtilization = reinterpret_cast<FnNvmlDeviceGetProcessUtilization>(::dlsym(this->m_libHandle, "nvmlDeviceGetProcessUtilization"));
+    pNvmlDeviceGetFieldValues = reinterpret_cast<FnNvmlDeviceGetFieldValues>(::dlsym(this->m_libHandle, "nvmlDeviceGetFieldValues"));
 
     const bool symbolsOk = pNvmlInitV2 && pNvmlShutdown && pNvmlDeviceGetCountV2
                            && pNvmlDeviceGetHandleByIndexV2 && pNvmlDeviceGetName
@@ -304,23 +388,59 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         NvmlMemory mem{};
         const bool hasUtil = pNvmlDeviceGetUtilizationRates(dev, &util) == NVML_SUCCESS;
         const bool hasMem = pNvmlDeviceGetMemoryInfo(dev, &mem) == NVML_SUCCESS;
-        unsigned int txKBps = 0;
-        unsigned int rxKBps = 0;
-        bool hasTx = false;
-        bool hasRx = false;
-        if (this->m_pcie)
+        double txBps = 0.0;
+        double rxBps = 0.0;
+        const bool readPcieNow = g_detailPageVisible || (g_pcieSampleCounter % kHiddenPcieEvery) == 0
+                                 || !g_lastPcieRates.contains(dev);
+        if (g_pcieSource == PcieSource::Counters && !readPcieNow)
         {
-            // Result of the previous asynchronous query (one sample behind).
-            std::lock_guard<std::mutex> lock(this->m_pcie->mutex);
-            const auto it = this->m_pcie->results.constFind(dev);
-            if (it != this->m_pcie->results.cend())
+            const auto last = g_lastPcieRates.value(dev);
+            txBps = last.first;
+            rxBps = last.second;
+        } else if (g_pcieSource != PcieSource::ThroughputThread)
+        {
+            PcieCounterState now;
+            if (readPcieCounters(dev, now))
             {
-                txKBps = it->first;
-                rxKBps = it->second;
-                hasTx = hasRx = true;
+                g_pcieSource = PcieSource::Counters;
+                PcieCounterState &prev = g_pcieCounters[dev];
+                const long long dtUs = now.timestampUs - prev.timestampUs;
+                // Two samples a few milliseconds apart (e.g. right after start-up) would
+                // turn a single burst into an absurd rate: wait for a longer interval.
+                static constexpr long long kMinIntervalUs = 50000;
+                if (!prev.valid)
+                {
+                    prev = now;
+                } else if (dtUs >= kMinIntervalUs)
+                {
+                    // 32-bit counters wrap; unsigned subtraction in the counter's width handles it.
+                    const unsigned long long dTx = now.is32Bit ? static_cast<unsigned int>(now.tx - prev.tx) : now.tx - prev.tx;
+                    const unsigned long long dRx = now.is32Bit ? static_cast<unsigned int>(now.rx - prev.rx) : now.rx - prev.rx;
+                    txBps = static_cast<double>(dTx) * 1e6 / static_cast<double>(dtUs);
+                    rxBps = static_cast<double>(dRx) * 1e6 / static_cast<double>(dtUs);
+                    prev = now;
+                }
+                g_lastPcieRates.insert(dev, { txBps, rxBps });
+            } else if (g_pcieSource == PcieSource::Unknown)
+            {
+                g_pcieSource = PcieSource::ThroughputThread;
             }
         }
-        pcieDevices.push_back(dev);
+        if (g_pcieSource == PcieSource::ThroughputThread)
+        {
+            if (this->m_pcie)
+            {
+                // Result of the previous asynchronous query (one sample behind), in KB/s.
+                std::lock_guard<std::mutex> lock(this->m_pcie->mutex);
+                const auto it = this->m_pcie->results.constFind(dev);
+                if (it != this->m_pcie->results.cend())
+                {
+                    txBps = static_cast<double>(it->first) * 1024.0;
+                    rxBps = static_cast<double>(it->second) * 1024.0;
+                }
+            }
+            pcieDevices.push_back(dev);
+        }
         unsigned int tempC = 0;
         const bool hasTemp = pNvmlDeviceGetTemperature
                              && pNvmlDeviceGetTemperature(dev, kNvmlTemperatureGpu, &tempC) == NVML_SUCCESS;
@@ -349,8 +469,8 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu.MemTotalMiB = hasMem ? static_cast<qint64>(mem.total / (1024ULL * 1024ULL)) : 0;
         gpu.SharedMemUsedMiB = 0;
         gpu.SharedMemTotalMiB = 0;
-        gpu.CopyTxBps = hasTx ? static_cast<double>(txKBps) * 1024.0 : 0.0;
-        gpu.CopyRxBps = hasRx ? static_cast<double>(rxKBps) * 1024.0 : 0.0;
+        gpu.CopyTxBps = txBps;
+        gpu.CopyRxBps = rxBps;
         gpu.UtilHistory.Push(gpu.UtilPct);
         const double powerPct = (gpu.PowerLimitW > 0.0 && gpu.PowerUsageW >= 0.0)
                                     ? (gpu.PowerUsageW / gpu.PowerLimitW * 100.0)
@@ -361,8 +481,7 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
                                   : 0.0;
         gpu.MemUsageHistory.Push(memPct);
         gpu.SharedMemHistory.Push(0.0);
-        Misc::PushHistoryAndUpdateMax(gpu.CopyTxHistory, gpu.CopyTxBps, gpu.MaxCopyBps);
-        Misc::PushHistoryAndUpdateMax(gpu.CopyRxHistory, gpu.CopyRxBps, gpu.MaxCopyBps);
+        Misc::PushHistoryPairAndUpdateMax(gpu.CopyTxHistory, gpu.CopyTxBps, gpu.CopyRxHistory, gpu.CopyRxBps, gpu.MaxCopyBps);
 
         QSet<QString> seenEngineKeys;
         auto addEngine = [&](const QString &key, const QString &label, double pct)
@@ -407,12 +526,27 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
                     return pids;
                 };
 
-                const QSet<unsigned int> gfxPids = collectPids(pNvmlDeviceGetGraphicsRunningProcesses);
+                // The per-process utilisation query is by far the most expensive NVML call
+                // here, and it only matters for splitting 3D from CUDA load. That split
+                // needs a process that does compute but no graphics; without one all
+                // load is 3D, so the query (and the graphics process list) is skipped.
                 const QSet<unsigned int> compPids = collectPids(pNvmlDeviceGetComputeRunningProcesses);
+                const QSet<unsigned int> gfxPids = compPids.isEmpty() ? QSet<unsigned int>()
+                                                                      : collectPids(pNvmlDeviceGetGraphicsRunningProcesses);
+                bool hasComputeOnlyProcess = false;
+                for (unsigned int pid : compPids)
+                {
+                    if (!gfxPids.contains(pid))
+                    {
+                        hasComputeOnlyProcess = true;
+                        break;
+                    }
+                }
 
-                unsigned int procUtilCount = 64;
+                unsigned int procUtilCount = hasComputeOnlyProcess ? 64 : 0;
                 QVector<NvmlProcessUtilizationSample> procUtil(static_cast<int>(procUtilCount));
-                NvmlReturn ret = pNvmlDeviceGetProcessUtilization(dev, procUtil.data(), &procUtilCount, 0);
+                NvmlReturn ret = hasComputeOnlyProcess ? pNvmlDeviceGetProcessUtilization(dev, procUtil.data(), &procUtilCount, 0)
+                                                       : NVML_SUCCESS;
                 if (ret != NVML_SUCCESS && procUtilCount > 64 && procUtilCount <= 1024)
                 {
                     procUtil.resize(static_cast<int>(procUtilCount));
@@ -489,7 +623,9 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         seenIds.insert(id);
     }
 
-    // Kick off the next (slow) PCIe throughput query in the background.
+    ++g_pcieSampleCounter;
+
+    // Fallback only: kick off the next (slow) PCIe throughput query in the background.
     if (pNvmlDeviceGetPcieThroughput && !pcieDevices.empty())
     {
         if (!this->m_pcie)
@@ -524,8 +660,7 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
         gpu->PowerHistory.Push(0.0);
         gpu->MemUsageHistory.Push(0.0);
         gpu->SharedMemHistory.Push(0.0);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->MaxCopyBps);
-        Misc::PushHistoryAndUpdateMax(gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
+        Misc::PushHistoryPairAndUpdateMax(gpu->CopyTxHistory, 0.0, gpu->CopyRxHistory, 0.0, gpu->MaxCopyBps);
         for (const auto &engine : gpu->Engines)
         {
             engine->Pct = 0.0;
@@ -564,6 +699,10 @@ void GpuNvmlBackend::unload()
     pNvmlDeviceGetGraphicsRunningProcesses = nullptr;
     pNvmlDeviceGetComputeRunningProcesses = nullptr;
     pNvmlDeviceGetProcessUtilization = nullptr;
+    pNvmlDeviceGetFieldValues = nullptr;
+    g_pcieSource = PcieSource::Unknown;
+    g_pcieCounters.clear();
+    g_lastPcieRates.clear();
 
     if (this->m_libHandle)
     {
