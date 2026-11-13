@@ -37,9 +37,28 @@ namespace
     //!  - the kernel cuts names to 15 characters ("xdg-desktop-por"); use the full
     //!    executable name from the command line when it starts with the short name;
     //!  - for script interpreters show the script ("python3 win7startmenu.py" -> "win7startmenu.py").
+    const QStringList &interpreterNames()
+    {
+        static const QStringList names = { "python", "python3", "bash", "sh", "dash", "zsh", "perl", "ruby", "node", "env" };
+        return names;
+    }
+
+    //! "python3.12" -> "python"
+    QString withoutVersion(const QString &name)
+    {
+        qsizetype end = name.size();
+        while (end > 0 && (name.at(end - 1).isDigit() || name.at(end - 1) == '.'))
+            --end;
+        return name.left(end);
+    }
+
     QString displayName(const Process &proc)
     {
         if (proc.IsKernelThread || proc.CmdLine.isEmpty())
+            return proc.Name;
+        // Called for every paint, sort comparison and total: most processes need no
+        // look at the command line at all, so decide that before splitting it.
+        if (proc.Name.size() < 15 && !interpreterNames().contains(proc.Name) && !interpreterNames().contains(withoutVersion(proc.Name)))
             return proc.Name;
         const QStringList args = proc.CmdLine.split(' ', Qt::SkipEmptyParts);
         if (args.isEmpty())
@@ -59,10 +78,8 @@ namespace
             }
         }
 
-        static const QStringList interpreters = { "python", "python3", "bash", "sh", "dash", "zsh", "perl", "ruby", "node", "env" };
-        QString base = name;
-        base.remove(QRegularExpression(QStringLiteral("[0-9.]+$")));   // python3.12 -> python
-        if (interpreters.contains(name) || interpreters.contains(base))
+        const QStringList &interpreters = interpreterNames();
+        if (interpreters.contains(name) || interpreters.contains(withoutVersion(name)))
         {
             for (int i = 1; i < args.size(); ++i)
             {
@@ -73,7 +90,11 @@ namespace
                         break;   // inline code / module: keep the interpreter name
                     continue;
                 }
-                const QString script = arg.section('/', -1);
+                QString script = arg.section('/', -1);
+                // Generic entry points say nothing: "…/win10explorer/run.py" -> "win10explorer".
+                static const QStringList generic = { "run.py", "main.py", "app.py", "__main__.py", "start.sh", "run.sh" };
+                if (generic.contains(script) && arg.count('/') >= 2)
+                    script = arg.section('/', -2, -2);
                 if (!script.isEmpty() && (arg.contains('/') || script.contains('.')))
                     return script;
                 break;
@@ -417,19 +438,120 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
     const int count = static_cast<int>(processes.size());
 
     // ── Which program row every process belongs to ───────────────────────────
-    // Like Windows Task Manager: one top-level row per program (systemd unit), the
-    // program's processes inside it. Apps you started are named after their desktop
-    // entry; all kernel threads share one "Linux kernel" row; a service with a single
-    // process is shown as that process. Inside a program row, same-name processes
-    // fold into one "name (N)" row.
-    QVector<QString> containerOf(count);   // "A:<app>", "K", "U:<cgroup>", "P:<pid>"
+    // Like Windows Task Manager: one row per program, its processes inside it.
+    //  - Plasma / GNOME put every launched app in a systemd app unit: one row per app,
+    //    named after its desktop entry ("A:<app>").
+    //  - Elsewhere (XFCE, or programs started by the Win7 start menu / Explorer clone)
+    //    processes stay in the session or the launcher's unit, so the program is found by
+    //    walking up to whatever launched it ("R:<root pid>:<start>"); named after the
+    //    first member with a desktop entry.
+    //  - Apps = app units plus programs that own a window on the taskbar (Windows'
+    //    rule; read from the window manager), everything else is Background & system.
+    //  - The session's own pieces (Xorg, xfwm4, panel, desktop...) form "Desktop session";
+    //    all kernel threads form "Linux kernel".
+    // Inside a program row, same-name processes fold into one "name (N)" row.
+    QVector<QString> containerOf(count);   // "A:<app>", "K", "D:<session>", "R:<pid>:<start>"
     QVector<QString> nameOf(count);
-    QHash<QString, QString> titles;        // container -> fixed title (apps, kernel)
+    QHash<QString, QString> titles;        // container -> fixed title (apps, kernel, session)
     QHash<QString, QString> icons;
     QHash<QString, int> membersOf;         // container -> process count
     QHash<QString, int> membersByGroup;    // "<container>\n<name>" -> count
+    QHash<QString, bool> appContainer;     // container -> belongs in the Apps section
+    QHash<QString, QVector<int>> rootMembers; // "R:" container -> member indexes
+    QHash<QString, int> rootOfKey;         // "R:" container -> index of its root process
     QHash<pid_t, int> incomingByPid;
     incomingByPid.reserve(count);
+    for (int i = 0; i < count; ++i)
+        incomingByPid.insert(processes.at(i).PID, i);
+
+    static const QRegularExpression sessionScope(QStringLiteral("/session-[^/]+\\.scope$"));
+    // The Win10 taskbar (~/Claude/win10taskbar/taskbar.py): part of the session, and it
+    // starts programs (taskbar buttons, Win+1..9), so their children are programs of their own.
+    auto isWin10Taskbar = [](const Process &p)
+    {
+        return p.CmdLine.contains(QLatin1String("/win10taskbar/taskbar.py"));
+    };
+    // Processes that start programs: their children are programs of their own.
+    auto isLauncher = [&isWin10Taskbar](const Process &p)
+    {
+        static const QSet<QString> names = {
+            "xfce4-session", "xfce4-panel", "wrapper-2.0", "xfdesktop", "xfsettingsd", "xfce4-appfinder",
+            "Thunar", "thunar", "sddm-helper", "sddm-helper-sta", "lightdm", "startplasma-x11",
+            "startplasma-wayl", "ksmserver", "systemd", "mate-session", "mate-panel", "lxsession", "lxpanel",
+            "openbox", "i3", "sway", "win10taskbar" };
+        if (names.contains(p.Name))
+            return true;
+        // The user's own launchers (python): Win7 start menu, Explorer clone, Win10 taskbar.
+        return p.Name.startsWith(QLatin1String("python"))
+               && (p.CmdLine.contains(QLatin1String("win7startmenu.py")) || p.CmdLine.contains(QLatin1String("/win10explorer/"))
+                   || isWin10Taskbar(p));
+    };
+    // Parts of the desktop session itself (grouped as "Desktop session").
+    auto isSessionPart = [&isWin10Taskbar](const Process &p)
+    {
+        static const QSet<QString> names = {
+            "xfce4-session", "xfwm4", "xfsettingsd", "xfce4-panel", "wrapper-2.0", "xfdesktop", "xfconfd",
+            "Xorg", "X", "sddm-helper", "sddm-helper-sta", "startplasma-x11", "startplasma-wayl", "ssh-agent",
+            "gpg-agent", "im-launch", "at-spi-bus-laun", "at-spi2-registr", "xfce4-notifyd", "xfce4-power-man",
+            "xfce4-screensav", "light-locker", "xiccd", "xfce-polkit", "polkit-gnome-au", "dbus-daemon",
+            "dbus-launch", "xscreensaver", "kwin_x11", "plasmashell", "ksmserver",
+            // Win10 taskbar (replaced xfce4-panel under Xfce): launcher script + its tray proxy.
+            "win10taskbar", "xembedsniproxy" };
+        return names.contains(p.Name) || (p.Name.startsWith(QLatin1String("python")) && isWin10Taskbar(p));
+    };
+
+    // Root of a process: walk up while the parent is in the same unit and is not a launcher.
+    QVector<int> rootIdx(count, -1);
+    auto rootOf = [&](int i)
+    {
+        QVector<int> path;
+        int j = i;
+        while (rootIdx[j] < 0)
+        {
+            path.append(j);
+            const Process &pj = processes.at(j);
+            const int k = (pj.PPID > 1 && pj.PPID != pj.PID) ? incomingByPid.value(pj.PPID, -1) : -1;
+            if (k < 0 || path.size() > 64)
+                break;
+            const Process &pk = processes.at(k);
+            if (pk.IsKernelThread || pk.CGroup != pj.CGroup || isLauncher(pk) || isSessionPart(pk))
+                break;
+            j = k;
+        }
+        const int root = rootIdx[j] >= 0 ? rootIdx[j] : j;
+        for (int p : std::as_const(path))
+            rootIdx[p] = root;
+        return root;
+    };
+
+    // Container of a process in a systemd app unit: one row per app, named after its desktop entry.
+    auto appKey = [&](const Process &proc) -> QString
+    {
+        auto info = this->m_appInfoCache.constFind(proc.CGroup);
+        if (info == this->m_appInfoCache.cend())
+        {
+            QString name, icon;
+            if (!this->m_appRegistry || !this->m_appRegistry->AppInfoForCGroup(proc.CGroup, &name, &icon) || name.isEmpty())
+            {
+                // No desktop entry: name the app after its unit ("app-<id>-1234.scope").
+                name = AppRegistry::AppIdFromCGroup(proc.CGroup);
+                if (name.isEmpty())
+                    name = proc.Name;
+                name = name.section('.', -1);
+            }
+            // Launcher names often carry notes: "Claude (focus/open)" -> "Claude".
+            static const QRegularExpression trailingNote(QStringLiteral("\\s*\\([^)]*\\)\\s*$"));
+            name.remove(trailingNote);
+            info = this->m_appInfoCache.insert(proc.CGroup, { name, icon });
+        }
+        const QString key = QStringLiteral("A:") + info->first;
+        titles.insert(key, info->first);
+        appContainer.insert(key, true);
+        if (!info->second.isEmpty() && !icons.contains(key))
+            icons.insert(key, info->second);
+        return key;
+    };
+
     for (int i = 0; i < count; ++i)
     {
         const Process &proc = processes.at(i);
@@ -440,46 +562,116 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
             titles.insert(containerOf[i], tr("Linux kernel"));
         } else if (isUserApp(proc, myUid))
         {
-            auto info = this->m_appInfoCache.constFind(proc.CGroup);
-            if (info == this->m_appInfoCache.cend())
-            {
-                QString name, icon;
-                if (!this->m_appRegistry || !this->m_appRegistry->AppInfoForCGroup(proc.CGroup, &name, &icon) || name.isEmpty())
-                {
-                    // No desktop entry: name the app after its unit ("app-<id>-1234.scope").
-                    name = AppRegistry::AppIdFromCGroup(proc.CGroup);
-                    if (name.isEmpty())
-                        name = proc.Name;
-                    name = name.section('.', -1);
-                }
-                // Launcher names often carry notes: "Claude (focus/open)" -> "Claude".
-                static const QRegularExpression trailingNote(QStringLiteral("\\s*\\([^)]*\\)\\s*$"));
-                name.remove(trailingNote);
-                info = this->m_appInfoCache.insert(proc.CGroup, { name, icon });
-            }
-            containerOf[i] = QStringLiteral("A:") + info->first;
-            titles.insert(containerOf[i], info->first);
-            if (!info->second.isEmpty() && !icons.contains(containerOf[i]))
-                icons.insert(containerOf[i], info->second);
-        } else if (!proc.CGroup.isEmpty() && proc.CGroup != QLatin1String("/"))
+            containerOf[i] = appKey(proc);
+        } else if (sessionScope.match(proc.CGroup).hasMatch() && isSessionPart(proc))
         {
-            containerOf[i] = QStringLiteral("U:") + proc.CGroup;
-            // The login session (display manager, X server, session start-up).
-            static const QRegularExpression sessionScope(QStringLiteral("/session-[^/]+\\.scope$"));
-            if (sessionScope.match(proc.CGroup).hasMatch())
-                titles.insert(containerOf[i], tr("Desktop session"));
+            containerOf[i] = QStringLiteral("D:") + proc.CGroup;
+            titles.insert(containerOf[i], tr("Desktop session"));
         } else
         {
-            containerOf[i] = QStringLiteral("P:") + QString::number(proc.PID);
+            const int root = rootOf(i);
+            const Process &r = processes.at(root);
+            // Chrome and Electron apps move their main process into an app unit after
+            // starting; helpers forked before that stay behind. They belong to that app.
+            const int parent = (r.PPID > 1 && r.PPID != r.PID) ? incomingByPid.value(r.PPID, -1) : -1;
+            if (parent >= 0 && isUserApp(processes.at(parent), myUid))
+            {
+                containerOf[i] = appKey(processes.at(parent));
+            } else
+            {
+                containerOf[i] = QStringLiteral("R:%1:%2").arg(r.PID).arg(r.StartTimeTicks);
+                rootMembers[containerOf[i]].append(i);
+                rootOfKey.insert(containerOf[i], root);
+            }
         }
         ++membersOf[containerOf[i]];
         ++membersByGroup[containerOf[i] + '\n' + nameOf[i]];
-        incomingByPid.insert(proc.PID, i);
     }
-    if (this->m_appInfoCache.size() > 4096)
-        this->m_appInfoCache.clear();
 
-    // App and kernel rows always exist; other units only when they hold 2+ processes.
+    // Programs found by the walk: Apps when one of their processes has a taskbar window.
+    // Without window information (no EWMH window manager), programs started directly by
+    // a launcher count as apps.
+    for (auto it = rootMembers.cbegin(); it != rootMembers.cend(); ++it)
+    {
+        bool isApp = false;
+        if (this->m_windowsKnown)
+        {
+            for (int i : it.value())
+            {
+                if (this->m_windowPids.contains(processes.at(i).PID))
+                {
+                    isApp = true;
+                    break;
+                }
+            }
+        } else
+        {
+            const Process &root = processes.at(rootOfKey.value(it.key()));
+            const int parent = incomingByPid.value(root.PPID, -1);
+            isApp = parent >= 0 && isLauncher(processes.at(parent)) && !isSessionPart(root)
+                    && root.UID == myUid && !processes.at(parent).Name.startsWith(QLatin1String("systemd"))
+                    && processes.at(parent).Name != QLatin1String("xfce4-session");
+        }
+        // Without window information a launched program still needs a desktop entry
+        // (decided below) to count as an app; helpers like thumbnail loaders have none.
+        const bool needsEntry = isApp && !this->m_windowsKnown;
+        if (isApp && !needsEntry)
+            appContainer.insert(it.key(), true);
+        else if (!isApp && it.value().size() < 2)
+            continue;   // a single background process is shown as itself
+
+        // Title: desktop entry of the earliest member that has one, else the root's name.
+        QVector<int> members = it.value();
+        std::sort(members.begin(), members.end(), [&](int a, int b) { return processes.at(a).StartTimeTicks < processes.at(b).StartTimeTicks; });
+        QString title, icon;
+        for (int i : std::as_const(members))
+        {
+            const Process &p = processes.at(i);
+            const QString cacheKey = QStringLiteral("p:%1:%2").arg(p.PID).arg(p.StartTimeTicks);
+            auto info = this->m_appInfoCache.constFind(cacheKey);
+            if (info == this->m_appInfoCache.cend())
+            {
+                QString name, ic;
+                if (!this->m_appRegistry || !this->m_appRegistry->AppInfoForProcess(p, &name, &ic))
+                    name.clear();
+                static const QRegularExpression trailingNote(QStringLiteral("\\s*\\([^)]*\\)\\s*$"));
+                name.remove(trailingNote);
+                info = this->m_appInfoCache.insert(cacheKey, { name, ic });
+            }
+            if (!info->first.isEmpty())
+            {
+                title = info->first;
+                icon = info->second;
+                break;
+            }
+        }
+        if (needsEntry && !title.isEmpty())
+            appContainer.insert(it.key(), true);
+        else if (needsEntry)
+            isApp = false;
+        if (title.isEmpty() && isApp)
+            title = displayName(processes.at(rootOfKey.value(it.key())));
+        if (!title.isEmpty())
+            titles.insert(it.key(), title);
+        if (!icon.isEmpty())
+            icons.insert(it.key(), icon);
+    }
+    if (this->m_appInfoCache.size() > qMax<qsizetype>(4096, 3 * count))
+    {
+        // Forget only processes that are gone. (Clearing everything made a machine
+        // with more than 4096 processes redo every lookup on every refresh.)
+        QSet<QString> live;
+        live.reserve(count);
+        for (const Process &p : processes)
+        {
+            live.insert(QStringLiteral("p:%1:%2").arg(p.PID).arg(p.StartTimeTicks));
+            live.insert(p.CGroup);
+        }
+        for (auto it = this->m_appInfoCache.begin(); it != this->m_appInfoCache.end();)
+            it = live.contains(it.key()) ? std::next(it) : this->m_appInfoCache.erase(it);
+    }
+
+    // App, kernel and session rows always exist; other programs only with 2+ processes.
     auto containerNeeded = [&](const QString &key)
     {
         return titles.contains(key) || membersOf.value(key) >= 2;
@@ -488,12 +680,18 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
     {
         return membersByGroup.value(containerOf[i] + '\n' + nameOf[i]) >= 2 ? nameOf[i] : QString();
     };
-    // Apps go to the Apps section, everything else (incl. single-process services) to Background & system.
-    auto sectionFor = [this](const QString &key) { return this->m_sections[key.startsWith(QLatin1String("A:")) ? SectionApps : SectionSystem]; };
+    auto sectionFor = [&](const QString &key) { return this->m_sections[appContainer.value(key, false) ? SectionApps : SectionSystem]; };
     auto targetParent = [&](int i) -> Node *   // program row or section; nullptr = program row not created yet
     {
         return containerNeeded(containerOf[i]) ? this->m_containers.value(containerOf[i], nullptr) : sectionFor(containerOf[i]);
     };
+
+    // ── 0. Program rows that changed section (a window opened / all closed) move
+    for (Node *container : QList<Node *>(this->m_containers.values()))
+    {
+        if (membersOf.contains(container->key) && container->parent != sectionFor(container->key))
+            this->removeNode(container);   // its processes are re-added below
+    }
 
     // ── 1. Remove processes that exited or whose place changed ───────────────
     QList<Node *> stale;
@@ -512,8 +710,27 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
         if (!keep)
             stale.append(node);
     }
-    for (Node *node : std::as_const(stale))
-        this->removeNode(node);
+    // Removed in runs of neighbouring rows: when a big group dies at once (a fork bomb
+    // being killed) that is a handful of signals instead of one per process, each of
+    // which costs the sort proxy and the view work proportional to the group size.
+    std::sort(stale.begin(), stale.end(), [](const Node *l, const Node *r)
+    {
+        return l->parent != r->parent ? std::less<const Node *>()(l->parent, r->parent) : l->row > r->row;
+    });
+    for (int i = 0; i < stale.size();)
+    {
+        Node *parent = stale.at(i)->parent;
+        const int last = stale.at(i)->row;
+        int first = last;
+        int j = i + 1;
+        while (j < stale.size() && stale.at(j)->parent == parent && stale.at(j)->row == first - 1)
+        {
+            first = stale.at(j)->row;
+            ++j;
+        }
+        this->removeLeafRange(parent, first, last);
+        i = j;
+    }
 
     // ── 2. Drop name groups and program rows that became empty or unneeded ───
     for (Node *container : QList<Node *>(this->m_containers.values()))
@@ -528,6 +745,7 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
     }
 
     // ── 3. Insert new processes (creating program / group rows when needed), update the rest
+    QHash<Node *, QList<Node *>> pendingLeaves;
     for (int i = 0; i < count; ++i)
     {
         const Process &proc = processes.at(i);
@@ -571,8 +789,23 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
 
         Node *fresh = new Node();
         fresh->process = proc;
-        this->appendNode(parent, fresh);
-        this->m_byPid.insert(proc.PID, fresh);
+        pendingLeaves[parent].append(fresh);
+    }
+    // New processes are added per parent in one go (same reason as the removals).
+    for (auto it = pendingLeaves.cbegin(); it != pendingLeaves.cend(); ++it)
+    {
+        Node *parent = it.key();
+        const QList<Node *> &fresh = it.value();
+        const int first = static_cast<int>(parent->children.size());
+        beginInsertRows(indexOfNode(parent), first, first + static_cast<int>(fresh.size()) - 1);
+        for (Node *node : fresh)
+        {
+            node->parent = parent;
+            node->row = static_cast<int>(parent->children.size());
+            parent->children.append(node);
+            this->m_byPid.insert(node->process.PID, node);
+        }
+        endInsertRows();
     }
 
     // ── 4. Totals: name groups first, then program rows ──────────────────────
@@ -590,6 +823,10 @@ bool ProcessTreeModel::SetProcesses(const QList<Process> &processes)
     };
     for (Node *container : std::as_const(this->m_containers))
     {
+        // Titles of found programs can change (e.g. Steam's main binary starts after its script).
+        container->title = titles.value(container->key);
+        if (icons.contains(container->key))
+            container->icon = icons.value(container->key);
         for (Node *child : std::as_const(container->children))
         {
             if (child->kind == Kind::Group)
@@ -610,6 +847,20 @@ ProcessTreeModel::Node *ProcessTreeModel::appendNode(Node *parent, Node *node)
     parent->children.append(node);
     endInsertRows();
     return node;
+}
+
+void ProcessTreeModel::removeLeafRange(Node *parent, int first, int last)
+{
+    beginRemoveRows(indexOfNode(parent), first, last);
+    const QList<Node *> removed = parent->children.mid(first, last - first + 1);
+    parent->children.remove(first, last - first + 1);
+    for (int i = first; i < parent->children.size(); ++i)
+        parent->children[i]->row = i;
+    for (Node *node : removed)
+        eraseSubtreeFromIndex(node);
+    endRemoveRows();
+    for (Node *node : removed)
+        freeNode(node);   // only after Qt has dropped its references to the rows
 }
 
 void ProcessTreeModel::removeNode(Node *node)
@@ -737,6 +988,22 @@ QModelIndex ProcessTreeModel::SectionIndex(Section section) const
 {
     Node *node = this->m_sections[section];
     return createIndex(node->row, 0, node);
+}
+
+bool ProcessTreeProxy::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+    // Search looks at the name, command line, user and PID only (not at numbers in
+    // other, possibly hidden, columns).
+    const QRegularExpression pattern = this->filterRegularExpression();
+    if (pattern.pattern().isEmpty())
+        return true;
+    const QAbstractItemModel *model = this->sourceModel();
+    for (int column : { ProcessTreeModel::ColName, ProcessTreeModel::ColCmdline, ProcessTreeModel::ColUser, ProcessTreeModel::ColPid })
+    {
+        if (model->index(sourceRow, column, sourceParent).data(Qt::DisplayRole).toString().contains(pattern))
+            return true;
+    }
+    return false;
 }
 
 bool ProcessTreeProxy::lessThan(const QModelIndex &left, const QModelIndex &right) const

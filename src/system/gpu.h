@@ -87,6 +87,23 @@ class GPU
     private:
         void detectGpuBackends();
         void unloadGpuBackends();
+        bool sampleBackends();
+        void publish();
+        void markStale();
+
+        /*!
+         * Driver calls run on a helper thread, never on the GUI thread: when the
+         * NVIDIA driver hangs (GPU fell off the bus, mode set, reset) each call can
+         * block for seconds, and a task manager must stay usable exactly then.
+         * The helper fills m_shadow; Sample() waits a short moment for it and copies
+         * the result into m_gpus (what the UI reads) only while the helper is idle.
+         */
+        struct Worker;
+        std::unique_ptr<Worker> m_worker;
+        std::vector<std::unique_ptr<GPUInfo>>    m_shadow;
+        int  m_stalledTicks { 0 };
+        bool m_firstSample { true };
+        bool m_stale { false };
         //! Returned if index of requested GPU doesn't exist
         GPUInfo m_nullGPU;
 

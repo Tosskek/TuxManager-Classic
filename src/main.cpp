@@ -34,6 +34,8 @@
 #include <QFont>
 #include <QPalette>
 #include <QStyleFactory>
+#include <QSocketNotifier>
+#include "os/selfpriority.h"
 #include <cstdio>
 #include <cstring>
 #include <csignal>
@@ -60,13 +62,16 @@ static QString instanceServerName()
     return QString("tux-manager-%1%2").arg(::getuid()).arg(suffix.isEmpty() ? QString() : "-" + suffix);
 }
 
-//! Closes a running instance. Returns true when one was running.
-static bool closeRunningInstance()
+enum class OldInstance { None, Closed, Killed };
+
+//! Closes a running instance: None = nobody was running, Closed = it closed
+//! normally, Killed = it was frozen and had to be killed.
+static OldInstance closeRunningInstance()
 {
     QLocalSocket socket;
     socket.connectToServer(instanceServerName());
     if (!socket.waitForConnected(500))
-        return false; // nobody running
+        return OldInstance::None; // nobody running
 
     // PID of the running instance from the socket's peer credentials; this works
     // even when that instance is frozen and can't answer.
@@ -79,25 +84,65 @@ static bool closeRunningInstance()
     // Ask it to close normally; it answers with its PID before closing.
     socket.write("quit\n");
     socket.flush();
-    if (socket.waitForReadyRead(1000) && oldPid <= 0)
+    // A healthy instance answers within milliseconds. No answer = its window is
+    // frozen; do not make the user wait long for a task manager.
+    const bool answered = socket.waitForReadyRead(1500);
+    if (answered && oldPid <= 0)
         oldPid = socket.readLine().trimmed().toLongLong();
 
     QElapsedTimer timer;
     timer.start();
-    while (socket.state() != QLocalSocket::UnconnectedState && timer.elapsed() < 3000)
+    const int patience = answered ? 3000 : 0;
+    while (socket.state() != QLocalSocket::UnconnectedState && timer.elapsed() < patience)
         socket.waitForDisconnected(100);
 
     // Wait until the process is really gone (its settings are written on close).
-    while (oldPid > 0 && ::kill(static_cast<pid_t>(oldPid), 0) == 0 && timer.elapsed() < 3000)
+    while (oldPid > 0 && ::kill(static_cast<pid_t>(oldPid), 0) == 0 && timer.elapsed() < patience)
         QThread::msleep(50);
 
     if (oldPid > 0 && ::kill(static_cast<pid_t>(oldPid), 0) == 0)
     {
         LOG_INFO(QString("Previous instance %1 did not exit, killing it").arg(oldPid));
         ::kill(static_cast<pid_t>(oldPid), SIGKILL);
-        QThread::msleep(100);
+        for (int i = 0; i < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; ++i)
+            QThread::msleep(25);
+        return OldInstance::Killed;
     }
-    return true;
+    return OldInstance::Closed;
+}
+
+// ── Signals ───────────────────────────────────────────────────────────────────
+// SIGTERM / SIGINT / SIGHUP (logout, kill, Ctrl+C) close the window normally so
+// settings are saved. The handler only writes one byte to a socket pair; the
+// actual work happens in the event loop.
+static int g_signalFds[2] = { -1, -1 };
+
+static void onUnixSignal(int)
+{
+    const char byte = 1;
+    const ssize_t ignored = ::write(g_signalFds[0], &byte, 1);
+    (void) ignored;
+}
+
+static void installSignalHandlers(QWidget *window)
+{
+    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, g_signalFds) != 0)
+        return;
+    QSocketNotifier *notifier = new QSocketNotifier(g_signalFds[1], QSocketNotifier::Read, window);
+    QObject::connect(notifier, &QSocketNotifier::activated, window, [window, notifier]()
+    {
+        notifier->setEnabled(false);
+        window->close();
+        QCoreApplication::quit();
+    });
+    struct sigaction action{};
+    action.sa_handler = onUnixSignal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESTART;
+    for (int sig : { SIGTERM, SIGINT, SIGHUP })
+        ::sigaction(sig, &action, nullptr);
+    // Writing to a closed pipe / socket must never kill a task manager.
+    ::signal(SIGPIPE, SIG_IGN);
 }
 
 static void listenForNewInstances(QLocalServer &server, QWidget *window)
@@ -213,7 +258,10 @@ int main(int argc, char *argv[])
     Logger::instance()->Verbosity = verbosity;
 
     // ── Single instance: launching again closes the running window (toggle) ──
-    if (closeRunningInstance() && !parser.isSet(replaceOption))
+    // A frozen old instance was not something the user could see or use, so in that
+    // case open a fresh window instead of only removing it.
+    const OldInstance old = closeRunningInstance();
+    if (old == OldInstance::Closed && !parser.isSet(replaceOption))
         return 0;
 
     // ── Bootstrap ─────────────────────────────────────────────────────────────
@@ -229,6 +277,8 @@ int main(int argc, char *argv[])
     MainWindow w;
     QLocalServer instanceServer;
     listenForNewInstances(instanceServer, &w);
+    installSignalHandlers(&w);
     w.show();
+    OS::BoostOwnPriority();
     return a.exec();
 }

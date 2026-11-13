@@ -1,17 +1,26 @@
-QT       += core gui network
+QT       += core gui network dbus
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+
+# Self-check build (qmake CONFIG+=tmtest): Qt verifies every change the process
+# tree model announces. Not for normal builds.
+tmtest {
+    QT += testlib
+    DEFINES += TM_MODEL_TEST
+}
 TARGET = tux-manager
 QMAKE_LFLAGS += -Wl,--export-dynamic
-LIBS += -ldl
+LIBS += -ldl -lxcb
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    os/windowpids.cpp \
+    os/selfpriority.cpp \
     aboutdialog.cpp \
     colorschemedialog.cpp \
     colorscheme.cpp \
@@ -70,6 +79,8 @@ SOURCES += \
     perf/memorydetailwidget.cpp
 
 HEADERS += \
+    os/windowpids.h \
+    os/selfpriority.h \
     aboutdialog.h \
     colorschemedialog.h \
     colorscheme.h \

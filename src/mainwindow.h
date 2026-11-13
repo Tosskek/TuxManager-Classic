@@ -35,6 +35,7 @@ namespace Ui
 QT_END_NAMESPACE
 
 class QToolButton;
+class QTimer;
 
 class MainWindow : public QMainWindow
 {
@@ -47,9 +48,13 @@ class MainWindow : public QMainWindow
         //! Refresh the speed / timeline toggle labels after the settings changed elsewhere
         //! (e.g. from a "Refresh interval" or "Graph time" context menu).
         static void SyncCornerToggles();
+        //! Write the settings to disk a moment from now (calls made in a burst are merged).
+        static void ScheduleSave();
 
     protected:
         void closeEvent(QCloseEvent *event) override;
+        void resizeEvent(QResizeEvent *event) override;
+        void moveEvent(QMoveEvent *event) override;
 
     private:
         void updateTabActivity(int index);
@@ -66,5 +71,7 @@ class MainWindow : public QMainWindow
         ServicesWidget    *m_servicesWidget;
         QToolButton       *m_speedToggle { nullptr };
         QToolButton       *m_timeToggle { nullptr };
+        QTimer            *m_saveTimer { nullptr };
+        bool               m_ready { false };
 };
 #endif // MAINWINDOW_H

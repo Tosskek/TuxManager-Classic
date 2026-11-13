@@ -113,9 +113,15 @@ UsersWidget::UsersWidget(OS::ProcessRefreshService *processRefreshService, QWidg
     QHeaderView *hv = this->ui->treeWidget->header();
     hv->setSectionsClickable(true);
     hv->setSortIndicatorShown(true);
+    hv->setStretchLastSection(false);   // else Memory also stretched and its values sat far from CPU
+    hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     hv->setSectionResizeMode(0, QHeaderView::Stretch);
-    hv->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    hv->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    // Fixed widths: sized-to-content columns changed width with every new value
+    // ("9.9%" -> "10.0%") and made the whole row shift.
+    hv->setSectionResizeMode(1, QHeaderView::Interactive);
+    hv->setSectionResizeMode(2, QHeaderView::Interactive);
+    hv->resizeSection(1, 90);
+    hv->resizeSection(2, 110);
     hv->setSortIndicator(this->m_sortColumn, this->m_sortOrder);
 
     connect(this->m_refreshTimer, &QTimer::timeout, this, &UsersWidget::onTimerTick);
@@ -384,31 +390,42 @@ void UsersWidget::rebuildTree(const QList<OS::Process> &allProcs)
             return x.PID < y.PID;
         });
 
-        for (int processIndex = 0; processIndex < procs.size(); ++processIndex)
+        // Build the wanted order first and re-attach all children in one step when it
+        // differs. (Moving rows one by one searched the child list per process, which
+        // froze the tab with thousands of processes.)
+        QList<QTreeWidgetItem *> wanted;
+        wanted.reserve(procs.size());
+        for (const OS::Process *proc : std::as_const(procs))
         {
-            const OS::Process &p = *procs.at(processIndex);
-            QTreeWidgetItem *procItem = processItems.take(p.PID);
+            QTreeWidgetItem *procItem = processItems.take(proc->PID);
             if (!procItem)
                 procItem = new QTreeWidgetItem();
-
-            updateProcessItem(procItem, p);
-
-            if (userItem->indexOfChild(procItem) < 0)
-            {
-                userItem->insertChild(processIndex, procItem);
-            } else
-            {
-                const int currentIndex = userItem->indexOfChild(procItem);
-                if (currentIndex != processIndex)
-                {
-                    userItem->takeChild(currentIndex);
-                    userItem->insertChild(processIndex, procItem);
-                }
-            }
+            updateProcessItem(procItem, *proc);
+            wanted.append(procItem);
         }
 
-        for (QTreeWidgetItem *staleProcessItem : std::as_const(processItems))
-            delete staleProcessItem;
+        bool sameOrder = processItems.isEmpty() && userItem->childCount() == wanted.size();
+        for (int i = 0; sameOrder && i < wanted.size(); ++i)
+            sameOrder = userItem->child(i) == wanted.at(i);
+        if (!sameOrder)
+        {
+            QList<QTreeWidgetItem *> selected;
+            for (QTreeWidgetItem *item : std::as_const(wanted))
+            {
+                if (item->parent() == userItem && item->isSelected())
+                    selected.append(item);
+            }
+            QTreeWidgetItem *current = this->ui->treeWidget->currentItem();
+            const bool currentIsChild = current && current->parent() == userItem && !processItems.values().contains(current);
+            userItem->takeChildren();
+            userItem->addChildren(wanted);
+            for (QTreeWidgetItem *item : std::as_const(selected))
+                item->setSelected(true);
+            if (currentIsChild)
+                this->ui->treeWidget->setCurrentItem(current, 0, QItemSelectionModel::NoUpdate);
+        }
+
+        qDeleteAll(processItems);   // exited processes (already detached above)
     }
 
     for (QTreeWidgetItem *staleUserItem : std::as_const(userItems))

@@ -39,6 +39,7 @@
 #include <QPalette>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QSplitter>
 #include <QSplitterHandle>
 
@@ -167,7 +168,7 @@ PerformanceWidget::PerformanceWidget(QWidget *parent) : QWidget(parent), ui(new 
     {
         QWidget *detail = this->m_detailByItem.value(item, nullptr);
         if (detail)
-            this->m_stack->setCurrentWidget(detail);
+            this->m_stack->setCurrentWidget(this->m_pageHolders.value(detail, detail));
         Metrics::Get()->SetProcessStatsEnabled(item == this->m_cpuItem && CFG->PerfShowCpu);
         Metrics::GetGPU()->SetDetailPageVisible(this->m_gpuItems.contains(item));
     });
@@ -224,7 +225,7 @@ void PerformanceWidget::setupSidePanel()
     this->m_cpuItem->SetGraphColor(scheme->CpuGraphLineColor, scheme->CpuGraphFillColor);
     this->m_cpuItem->SetGraphSource(Metrics::GetCPU()->CpuHistory());
     this->m_sidePanel->AddItem(this->m_cpuItem);
-    this->m_stack->addWidget(this->m_cpuDetail);
+    this->addDetailPage(this->m_cpuDetail);
     this->m_detailByItem.insert(this->m_cpuItem, this->m_cpuDetail);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -234,7 +235,7 @@ void PerformanceWidget::setupSidePanel()
     this->m_memoryItem->SetGraphColor(scheme->MemoryGraphLineColor, scheme->MemoryGraphFillColor);
     this->m_memoryItem->SetGraphSource(Metrics::GetMemory()->MemHistory());
     this->m_sidePanel->AddItem(this->m_memoryItem);
-    this->m_stack->addWidget(this->m_memDetail);
+    this->addDetailPage(this->m_memDetail);
     this->m_detailByItem.insert(this->m_memoryItem, this->m_memDetail);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -244,7 +245,7 @@ void PerformanceWidget::setupSidePanel()
     this->m_swapItem->SetGraphColor(scheme->SwapUsageGraphLineColor, scheme->SwapUsageGraphFillColor);
     this->m_swapItem->SetGraphSource(Metrics::GetSwap()->SwapUsageHistory());
     this->m_sidePanel->AddItem(this->m_swapItem);
-    this->m_stack->addWidget(this->m_swapDetail);
+    this->addDetailPage(this->m_swapDetail);
     this->m_detailByItem.insert(this->m_swapItem, this->m_swapDetail);
 
     this->setupDiskPanels();
@@ -269,7 +270,7 @@ void PerformanceWidget::setupDiskPanels()
 
         auto *detail = new Perf::DiskDetailWidget(this);
         detail->SetDisk(i);
-        this->m_stack->addWidget(detail);
+        this->addDetailPage(detail);
         this->m_diskDetails.append(detail);
         this->m_detailByItem.insert(item, detail);
     }
@@ -292,7 +293,7 @@ void PerformanceWidget::setupGpuPanels()
 
         auto *detail = new Perf::GpuDetailWidget(this);
         detail->SetGpu(i);
-        this->m_stack->addWidget(detail);
+        this->addDetailPage(detail);
         this->m_gpuDetails.append(detail);
         this->m_detailByItem.insert(item, detail);
     }
@@ -316,7 +317,7 @@ void PerformanceWidget::setupNetworkPanels()
 
         auto *detail = new Perf::NetworkDetailWidget(this);
         detail->SetNetwork(i);
-        this->m_stack->addWidget(detail);
+        this->addDetailPage(detail);
         this->m_networkDetails.append(detail);
         this->m_detailByItem.insert(item, detail);
     }
@@ -421,6 +422,30 @@ void PerformanceWidget::onProviderUpdated()
     }
 }
 
+void PerformanceWidget::addDetailPage(QWidget *detail)
+{
+    // Every page sits in its own scroll area. A page has a minimum size (graphs,
+    // statistics); without this the largest of them dictated how small the whole
+    // window could be made. Now the window shrinks freely and a page that no longer
+    // fits gets scroll bars instead.
+    QScrollArea *area = new QScrollArea(this->m_stack);
+    area->setFrameShape(QFrame::NoFrame);
+    area->setWidgetResizable(true);
+    area->setFocusPolicy(Qt::NoFocus);
+    area->viewport()->setAutoFillBackground(false);
+    // Only ever scroll vertically. Sideways the page always takes exactly the width
+    // of the window (graphs shrink with it), so nothing runs out past the right edge.
+    area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    QSizePolicy policy = detail->sizePolicy();
+    policy.setHorizontalPolicy(QSizePolicy::Ignored);
+    detail->setSizePolicy(policy);
+    detail->setMinimumWidth(0);
+    area->setWidget(detail);
+    detail->setAutoFillBackground(false);
+    this->m_pageHolders.insert(detail, area);
+    this->m_stack->addWidget(area);
+}
+
 void PerformanceWidget::SetActive(bool active)
 {
     if (this->m_active == active)
@@ -428,7 +453,10 @@ void PerformanceWidget::SetActive(bool active)
 
     this->m_active = active;
     Metrics::Get()->SetActive(active);
-    if (active)
+    // Activating takes a sample, which already updates everything through the
+    // updated() signal; doing it again here moved every graph grid one extra step.
+    // Only while paused (no sample is taken) the texts must be filled in by hand.
+    if (active && CFG->RefreshPaused)
         this->onProviderUpdated();
 }
 

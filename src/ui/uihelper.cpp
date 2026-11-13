@@ -312,6 +312,109 @@ void UIHelper::EnableGraphContextMenu(QWidget *widget)
     });
 }
 
+namespace
+{
+    //! Keeps the statistics block inside a narrow page: the generous gaps between
+    //! its columns give way first (never the numbers themselves), and come back
+    //! as soon as there is room again.
+    class StatsSpacingFilter : public QObject
+    {
+        public:
+            StatsSpacingFilter(QWidget *page, QGridLayout *grid, QGridLayout *big, QGridLayout *small)
+                : QObject(page), m_grid(grid), m_big(big), m_small(small) {}
+
+            bool eventFilter(QObject *watched, QEvent *event) override
+            {
+                if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::LayoutRequest)
+                    this->apply(static_cast<QWidget *>(watched));
+                return QObject::eventFilter(watched, event);
+            }
+
+        private:
+            void apply(QWidget *page)
+            {
+                static constexpr int kGrid = 56, kGridMin = 12, kBig = 30, kBigMin = 12, kSmall = 28, kSmallMin = 8;
+                QLayout *pageLayout = page->layout();
+                if (!pageLayout)
+                    return;
+                const QMargins m = pageLayout->contentsMargins();
+                const int available = page->width() - m.left() - m.right();
+                const int bigGaps = qMax(0, this->m_big->columnCount() - 1);
+                const int bigBase = this->m_big->sizeHint().width() - this->m_big->horizontalSpacing() * bigGaps;
+                const int smallBase = this->m_small->sizeHint().width() - this->m_small->horizontalSpacing();
+                // The outer grid has a third, empty stretch column, so its gap counts twice.
+                int deficit = bigBase + smallBase + kBig * bigGaps + kSmall + 2 * kGrid - available;
+                int gridGap = kGrid, bigGap = kBig, smallGap = kSmall;
+                if (deficit > 0)
+                {
+                    const int cut = qMin((deficit + 1) / 2, kGrid - kGridMin);
+                    gridGap -= cut;
+                    deficit -= 2 * cut;
+                }
+                if (deficit > 0 && bigGaps > 0)
+                {
+                    const int cut = qMin((deficit + bigGaps - 1) / bigGaps, kBig - kBigMin);
+                    bigGap -= cut;
+                    deficit -= cut * bigGaps;
+                }
+                if (deficit > 0)
+                    smallGap -= qMin(deficit, kSmall - kSmallMin);
+                if (this->m_grid->horizontalSpacing() != gridGap)
+                    this->m_grid->setHorizontalSpacing(gridGap);
+                if (this->m_big->horizontalSpacing() != bigGap)
+                    this->m_big->setHorizontalSpacing(bigGap);
+                if (this->m_small->horizontalSpacing() != smallGap)
+                    this->m_small->setHorizontalSpacing(smallGap);
+            }
+
+            QGridLayout *m_grid;
+            QGridLayout *m_big;
+            QGridLayout *m_small;
+    };
+
+    //! Shortens a label's text with "..." to the width it actually has.
+    class ElideFilter : public QObject
+    {
+        public:
+            explicit ElideFilter(QLabel *label) : QObject(label) {}
+
+            static void apply(QLabel *label)
+            {
+                const QString full = label->property("fullText").toString();
+                const QString shown = label->fontMetrics().elidedText(full, Qt::ElideRight, qMax(0, label->contentsRect().width()));
+                if (label->text() != shown)
+                    label->setText(shown);
+                label->setToolTip(shown == full ? QString() : full);
+            }
+
+            bool eventFilter(QObject *watched, QEvent *event) override
+            {
+                if (event->type() == QEvent::Resize)
+                    apply(static_cast<QLabel *>(watched));
+                return QObject::eventFilter(watched, event);
+            }
+    };
+}
+
+void UIHelper::SetElidedText(QLabel *label, const QString &text)
+{
+    if (!label)
+        return;
+    if (!label->property("fullText").isValid())
+    {
+        // Take whatever width is left in its row instead of demanding the full text
+        // width (which pushed the page wider than a small window).
+        QSizePolicy policy = label->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Ignored);
+        policy.setHorizontalStretch(1);
+        label->setSizePolicy(policy);
+        label->setMinimumWidth(0);
+        label->installEventFilter(new ElideFilter(label));
+    }
+    label->setProperty("fullText", text);
+    ElideFilter::apply(label);
+}
+
 void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigValues, int bigColumns)
 {
     if (!grid)
@@ -395,6 +498,8 @@ void UIHelper::ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigVa
     small->setRowStretch(small->rowCount(), 1);
 
     grid->setHorizontalSpacing(56);
+    if (QWidget *page = grid->parentWidget())
+        page->installEventFilter(new StatsSpacingFilter(page, grid, big, small));
     grid->setContentsMargins(0, 8, 0, 0);
     grid->addLayout(big, 0, 0, Qt::AlignLeft | Qt::AlignTop);
     grid->addLayout(small, 0, 1, Qt::AlignLeft | Qt::AlignTop);

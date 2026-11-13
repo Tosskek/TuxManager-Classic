@@ -314,16 +314,16 @@ bool ServiceHelper::ListServicesViaSystemdDbus(QList<ServiceRecord> &records, QS
             return false;
         }
 
-        const QString unitName = QString::fromLatin1(unit ? unit : "");
+        const QString unitName = QString::fromUtf8(unit ? unit : "");
         if (!unitName.endsWith(".service"))
             continue;
 
         ServiceRecord rec;
         rec.unit = unitName;
-        rec.description = QString::fromLatin1(description ? description : "");
-        rec.loadState = QString::fromLatin1(loadState ? loadState : "");
-        rec.activeState = QString::fromLatin1(activeState ? activeState : "");
-        rec.subState = QString::fromLatin1(subState ? subState : "");
+        rec.description = QString::fromUtf8(description ? description : "");
+        rec.loadState = QString::fromUtf8(loadState ? loadState : "");
+        rec.activeState = QString::fromUtf8(activeState ? activeState : "");
+        rec.subState = QString::fromUtf8(subState ? subState : "");
         records.append(rec);
     }
 

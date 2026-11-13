@@ -17,6 +17,10 @@
  */
 
 #include "serviceswidget.h"
+#include "mainwindow.h"
+#include <QApplication>
+#include <QPointer>
+#include <unistd.h>
 #include "ui_serviceswidget.h"
 
 #include "os/servicehelper.h"
@@ -87,6 +91,9 @@ ServicesWidget::ServicesWidget(QWidget *parent)
     this->ui->tableView->sortByColumn(0, Qt::AscendingOrder);
     if (!CFG->ServicesHeaderState.isEmpty())
         hv->restoreState(CFG->ServicesHeaderState);
+    // After the restore: a saved state carries the old (centred) alignment with it.
+    hv->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    hv->setSectionResizeMode(OS::ServiceModel::ColDescription, QHeaderView::Stretch);
     this->m_headerPersistenceEnabled = true;
 
     connect(hv, &QHeaderView::customContextMenuRequested, this, &ServicesWidget::onHeaderContextMenu);
@@ -104,7 +111,12 @@ ServicesWidget::~ServicesWidget()
 {
     this->m_refreshTimer->stop();
     this->m_workerThread->quit();
-    this->m_workerThread->wait(1000);
+    if (!this->m_workerThread->wait(1000))
+    {
+        // The worker is stuck (systemd not answering). Destroying a running QThread
+        // makes Qt abort with a core dump; settings are saved already, so just leave.
+        ::_exit(0);
+    }
     delete this->ui;
 }
 
@@ -354,14 +366,26 @@ void ServicesWidget::manageServiceUnit(const QString &unit, OS::ServiceHelper::U
     if (unit.isEmpty())
         return;
 
-    QString error;
-    if (!OS::ServiceHelper::ManageUnit(unit, action, &error))
+    // Off the GUI thread: the call waits for systemd and, when a password is
+    // needed, for the whole authorization dialog. The window must stay alive
+    // meanwhile.
+    QPointer<ServicesWidget> self(this);
+    QThread *thread = QThread::create([self, unit, action, actionLabel]()
     {
-        QMessageBox::warning(this, tr("Service action failed"), tr("Failed to %1 service %2.\n\n%3").arg(actionLabel, unit, error));
-    }
-
-    if (this->m_active && !CFG->RefreshPaused)
-        this->startRefresh();
+        QString error;
+        const bool ok = OS::ServiceHelper::ManageUnit(unit, action, &error);
+        QMetaObject::invokeMethod(qApp, [self, ok, unit, actionLabel, error]()
+        {
+            if (!self)
+                return;
+            if (!ok)
+                QMessageBox::warning(self, tr("Service action failed"), tr("Failed to %1 service %2.\n\n%3").arg(actionLabel, unit, error));
+            if (self->m_active && !CFG->RefreshPaused)
+                self->startRefresh();
+        }, Qt::QueuedConnection);
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 void ServicesWidget::showHeaderContextMenu(QHeaderView *header, int columnCount, const std::function<QString(int)> &titleForColumn, const QPoint &pos)
@@ -385,11 +409,17 @@ void ServicesWidget::showHeaderContextMenu(QHeaderView *header, int columnCount,
     if (!chosen)
         return;
 
+    // Only the column check boxes; the shared items below them handle themselves
+    // (choosing one used to hide the Service column).
+    if (!chosen->isCheckable() || !chosen->data().isValid())
+        return;
     const int col = chosen->data().toInt();
+    if (col < 0 || col >= columnCount)
+        return;
     if (chosen->isChecked())
         header->showSection(col);
-    else
-        header->hideSection(col);
+    else if (col != OS::ServiceModel::ColService)
+        header->hideSection(col);   // the Service name always stays
 
     this->saveHeaderState();
 }
@@ -400,5 +430,8 @@ void ServicesWidget::saveHeaderState() const
         return;
 
     if (this->ui && this->ui->tableView && this->ui->tableView->horizontalHeader())
+    {
         CFG->ServicesHeaderState = this->ui->tableView->horizontalHeader()->saveState();
+        MainWindow::ScheduleSave();
+    }
 }

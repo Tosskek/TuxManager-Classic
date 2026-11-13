@@ -74,7 +74,8 @@ CpuDetailWidget::CpuDetailWidget(QWidget *parent) : QWidget(parent), ui(new Ui::
     this->ui->headerLabelLayout->removeWidget(this->ui->modelNameLabel);
     this->ui->modelNameLabel->setWordWrap(false);
     this->ui->modelNameLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
-    this->ui->headerLayout->insertWidget(1, this->ui->modelNameLabel, 0, Qt::AlignRight | Qt::AlignBottom);
+    this->ui->headerLayout->setStretch(0, 0);
+    this->ui->headerLayout->insertWidget(1, this->ui->modelNameLabel, 1);   // fills the row; text right-aligned, cut with "..." when short of room
     this->ui->utilizationLabel->hide();
 
     // "% Utilization ............ 100%" caption above the graph.
@@ -133,7 +134,7 @@ CpuDetailWidget::~CpuDetailWidget()
 void CpuDetailWidget::Init()
 {
     // Populate one-time static labels from metadata
-    this->ui->modelNameLabel->setText(Metrics::GetCPU()->CpuModelName());
+    UIHelper::SetElidedText(this->ui->modelNameLabel, Metrics::GetCPU()->CpuModelName());
     this->ui->statLogicalCpusValue->setText(QString::number(Metrics::GetCPU()->CpuLogicalCount()));
     this->m_graphArea->Init();
 

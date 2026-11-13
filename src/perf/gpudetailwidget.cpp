@@ -367,7 +367,7 @@ void GpuDetailWidget::bindGpuIdentity()
 
     const GPU::GPUInfo &gpu = Metrics::GetGPU()->FromIndex(this->m_gpuIndex);
     this->ui->titleLabel->setText(tr("GPU %1").arg(this->m_gpuIndex));
-    this->ui->modelLabel->setText(gpu.Name);
+    UIHelper::SetElidedText(this->ui->modelLabel, gpu.Name);
 }
 
 void GpuDetailWidget::bindEngineGraphSource(int slot)

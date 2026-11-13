@@ -166,6 +166,11 @@ void NetworkDetailWidget::onUpdated()
         return;
 
     const Network::NetworkInfo &network = Metrics::GetNetwork()->FromIndex(this->m_networkIndex);
+    // These can change while running (DHCP renewal, link renegotiation).
+    this->ui->typeValueLabel->setText(network.Type);
+    this->ui->speedValueLabel->setText(network.LinkSpeedMbps > 0 ? QString::number(network.LinkSpeedMbps) + tr(" Mbps") : tr("Unknown"));
+    this->ui->ipv4ValueLabel->setText(network.IPv4.isEmpty() ? tr("—") : network.IPv4);
+    this->ui->ipv6ValueLabel->setText(network.IPv6.isEmpty() ? tr("—") : network.IPv6.join('\n'));
     this->ui->sendValueLabel->setText(this->formatTransferRate(network.TxBps));
     this->ui->receiveValueLabel->setText(this->formatTransferRate(network.RxBps));
 

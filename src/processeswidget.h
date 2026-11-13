@@ -22,9 +22,11 @@
 #include "os/processmodel.h"
 #include "os/appregistry.h"
 #include "os/processtreemodel.h"
+#include "os/windowpids.h"
 #include "os/processfilterproxy.h"
 #include "os/processrefreshservice.h"
 
+#include <QElapsedTimer>
 #include <QModelIndex>
 #include <QHeaderView>
 #include <QSet>
@@ -70,6 +72,7 @@ class ProcessesWidget : public QWidget
 
     private:
         bool m_treeDefaultExpansionDone { false };
+        OS::WindowPids m_windowPids;   //!< which processes own a taskbar window (Apps section)
         double m_snapshotCpuTotal { 0.0 };   //!< sum of CPU % of the last snapshot (header total)
         qlonglong m_snapshotThreadTotal { 0 }; //!< sum of threads of the last snapshot (status bar)
         Ui::ProcessesWidget      *ui;
@@ -85,6 +88,8 @@ class ProcessesWidget : public QWidget
         bool                      m_tableContextMenuOpen { false };
         bool                      m_treeViewMode { false };
         bool                      m_refreshInFlight { false };
+        bool                      m_searchExpandQueued { false };
+        QElapsedTimer             m_refreshClock;
         bool                      m_refreshPending { false };
         bool                      m_tableHeaderPersistenceEnabled { false };
         bool                      m_treeHeaderPersistenceEnabled { false };
@@ -100,6 +105,8 @@ class ProcessesWidget : public QWidget
         void saveTreeHeaderState() const;
         void syncProcessColumnVisibility(int column, bool hidden);
         void syncAllProcessColumnVisibility();
+        void updateStretchColumns();
+        bool selectionHasGroupRow() const;
         void updateIOMetricsEnabledState(bool triggerImmediateRefresh = true);
         bool anyIOMetricsColumnVisible() const;
         bool selectProcessInTree(pid_t pid);

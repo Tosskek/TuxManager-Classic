@@ -45,6 +45,9 @@ class GpuNvmlBackend
         std::unique_ptr<PcieWorker> m_pcie;
 
         bool    m_available { false };
+        bool    m_lost { false };          ///< was available, then stopped answering
+        int     m_failures { 0 };
+        int     m_retryCountdown { 0 };
         void   *m_libHandle { nullptr };
 };
 

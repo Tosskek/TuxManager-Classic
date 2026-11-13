@@ -88,6 +88,8 @@ namespace UIHelper
     void ApplyGraphRowsNarrower(QWidget *page, QBoxLayout *pageLayout, const QList<QWidget *> &graphs,
                                 const QList<QLayout *> &rows, double fraction, int extraInsetPx = 0);
     void ApplyClassicStats(QGridLayout *grid, const QList<QLabel *> &bigValues, int bigColumns = 2);
+    //! Sets a label text that is cut with "..." when the label is too narrow (full text as tooltip).
+    void SetElidedText(QLabel *label, const QString &text);
 }
 
 #endif // UI_UIHELPER_H

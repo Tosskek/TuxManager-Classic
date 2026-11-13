@@ -17,6 +17,7 @@
  */
 
 #include "runtaskdialog.h"
+#include "os/selfpriority.h"
 #include "ui_runtaskdialog.h"
 #include "configuration.h"
 #include "globals.h"
@@ -174,7 +175,7 @@ bool RunTaskDialog::startDetachedCommand(const QString &command, QString *error)
 
     QStringList arguments = parts;
     arguments.removeFirst();
-    if (QProcess::startDetached(executable, arguments))
+    if (OS::StartDetachedNormalPriority(executable, arguments))
         return true;
 
     if (error)

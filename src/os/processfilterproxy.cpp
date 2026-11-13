@@ -19,6 +19,7 @@
 #include "processfilterproxy.h"
 #include "processmodel.h"
 
+#include <QRegularExpression>
 #include <unistd.h>
 
 using namespace OS;
@@ -64,8 +65,15 @@ bool ProcessFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &sour
     if (!this->ShowOtherUsersProcs && proc.UID != this->m_myUid)
         return false;
 
-    // ── Free-text search (delegate to base class) ────────────────────────────
-    return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
+    // ── Free-text search: name, command line, user and PID ───────────────────
+    // (Not "every column": that matched numbers in hidden columns and formatted
+    // all 19 cells of every process on every refresh.)
+    Q_UNUSED(sourceParent);
+    const QRegularExpression pattern = this->filterRegularExpression();
+    if (pattern.pattern().isEmpty())
+        return true;
+    return proc.Name.contains(pattern) || proc.CmdLine.contains(pattern)
+           || proc.User.contains(pattern) || QString::number(proc.PID).contains(pattern);
 }
 
 // static

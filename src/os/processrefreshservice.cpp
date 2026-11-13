@@ -17,6 +17,7 @@
  */
 
 #include "processrefreshservice.h"
+#include <unistd.h>
 
 #include "proc.h"
 
@@ -155,7 +156,13 @@ ProcessRefreshService::ProcessRefreshService(QObject *parent)
 ProcessRefreshService::~ProcessRefreshService()
 {
     this->m_workerThread->quit();
-    this->m_workerThread->wait(1000);
+    if (!this->m_workerThread->wait(1000))
+    {
+        // Stuck in a /proc read (a process whose memory map is locked by a hung
+        // mount, out-of-memory...). Destroying a running QThread makes Qt abort;
+        // settings are saved already, so just leave.
+        ::_exit(0);
+    }
 }
 
 void ProcessRefreshService::RequestSnapshot(Consumer consumer, quint64 token, const Process::LoadOptions &options)

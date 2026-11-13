@@ -27,6 +27,8 @@
 #include <QHBoxLayout>
 #include <QShortcut>
 #include <QToolButton>
+#include <QElapsedTimer>
+#include <QTimer>
 
 MainWindow *MainWindow::s_instance = nullptr;
 
@@ -51,6 +53,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     this->ui->performanceLayout->addWidget(this->m_performanceWidget);
     this->ui->usersLayout->addWidget(this->m_usersWidget);
     this->ui->servicesLayout->addWidget(this->m_servicesWidget);
+
+    // Small enough for a corner of the screen, big enough to stay usable. (It used to
+    // be whatever the largest Performance page needed, about 800 x 520.)
+    this->setMinimumSize(666, 400);
 
     // Restore previous window layout
     if (!CFG->WindowGeometry.isEmpty())
@@ -91,6 +97,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this->m_usersWidget->ApplyRefreshRate();
             this->m_servicesWidget->ApplyRefreshRate();
             this->syncCornerToggles();
+            ScheduleSave();
         });
 
         cornerLayout->addSpacing(6);
@@ -104,6 +111,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             if (this->m_performanceWidget->IsActive())
                 this->m_performanceWidget->onProviderUpdated();
             this->syncCornerToggles();
+            ScheduleSave();
         });
 
         this->syncCornerToggles();
@@ -126,6 +134,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     {
         CFG->ActiveTab = index;
         this->updateTabActivity(index);
+        ScheduleSave();
     });
 
     connect(this->m_usersWidget, &UsersWidget::goToProcessRequested, this, [this](pid_t pid)
@@ -134,6 +143,38 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         this->m_processesWidget->ClearSearchFilter();
         this->m_processesWidget->SelectProcessByPid(pid);
     });
+
+    // Settings are also written a moment after any change, not only on close, so a
+    // crash, a forced kill or a power loss does not lose the layout.
+    this->m_saveTimer = new QTimer(this);
+    this->m_saveTimer->setSingleShot(true);
+    this->m_saveTimer->setInterval(2000);
+    connect(this->m_saveTimer, &QTimer::timeout, this, [this]()
+    {
+        if (!this->isMinimized())
+        {
+            CFG->WindowGeometry = this->saveGeometry();
+            CFG->WindowState    = this->saveState();
+        }
+        CFG->Save();
+    });
+    this->m_ready = true;
+
+    // Diagnostics: TUX_MANAGER_STALL_LOG=1 prints every time the GUI thread was
+    // busy for longer than 100 ms (measured as a late 25 ms timer).
+    if (qEnvironmentVariableIntValue("TUX_MANAGER_STALL_LOG") != 0)
+    {
+        QTimer *probe = new QTimer(this);
+        QElapsedTimer *clock = new QElapsedTimer;
+        clock->start();
+        connect(probe, &QTimer::timeout, this, [clock]()
+        {
+            const qint64 gap = clock->restart();
+            if (gap > 125)
+                fprintf(stderr, "GUI stall %lld ms\n", static_cast<long long>(gap - 25));
+        });
+        probe->start(25);
+    }
 }
 
 MainWindow::~MainWindow()
@@ -143,8 +184,27 @@ MainWindow::~MainWindow()
     delete this->ui;
 }
 
+void MainWindow::ScheduleSave()
+{
+    if (s_instance && s_instance->m_ready)
+        s_instance->m_saveTimer->start();
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    ScheduleSave();
+}
+
+void MainWindow::moveEvent(QMoveEvent *event)
+{
+    QMainWindow::moveEvent(event);
+    ScheduleSave();
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    this->m_saveTimer->stop();
     CFG->WindowGeometry = this->saveGeometry();
     CFG->WindowState    = this->saveState();
     CFG->Save();
@@ -155,6 +215,7 @@ void MainWindow::SyncCornerToggles()
 {
     if (s_instance)
         s_instance->syncCornerToggles();
+    ScheduleSave();   // called whenever a setting was changed from a menu
 }
 
 void MainWindow::syncCornerToggles()

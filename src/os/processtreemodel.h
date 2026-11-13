@@ -24,6 +24,7 @@
 #include <QAbstractItemModel>
 #include <QFont>
 #include <QHash>
+#include <QSet>
 #include <QSortFilterProxyModel>
 
 namespace OS
@@ -96,6 +97,9 @@ namespace OS
             /// Registry used to provide icons for the name column; nullptr disables icons.
             void SetAppRegistry(AppRegistry *registry) { this->m_appRegistry = registry; }
             QModelIndex IndexForPid(pid_t pid) const;
+            //! PIDs owning a taskbar window (see WindowPids); known=false when the window
+            //! manager gives no client list. Used to decide which programs are Apps.
+            void SetWindowPids(const QSet<pid_t> &pids, bool known) { this->m_windowPids = pids; this->m_windowsKnown = known; }
             //! Font of the view, used as the base for bold section headers.
             void SetBaseFont(const QFont &font) { this->m_baseFont = font; }
 
@@ -117,6 +121,8 @@ namespace OS
 
             Node *m_root { nullptr };
             QFont m_baseFont;
+            QSet<pid_t> m_windowPids;
+            bool m_windowsKnown { false };
             Node *m_sections[SectionCount] {};
             QHash<QString, Node *> m_containers;             //!< unit key -> program row
             QHash<QString, QPair<QString, QString>> m_appInfoCache; //!< cgroup -> (app name, icon)
@@ -129,6 +135,7 @@ namespace OS
             void eraseSubtreeFromIndex(Node *node);
             static Node *nodeFromIndex(const QModelIndex &index);
             void removeNode(Node *node);
+            void removeLeafRange(Node *parent, int first, int last);
             Node *appendNode(Node *parent, Node *node);
             static void collectPids(const Node *node, QList<pid_t> &out);
             static Process totals(const Node *node);
@@ -148,6 +155,7 @@ namespace OS
 
         protected:
             bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
+            bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
     };
 }
 

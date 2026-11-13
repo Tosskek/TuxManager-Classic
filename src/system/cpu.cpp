@@ -276,6 +276,12 @@ void CPU::readCurrentFreq()
 
     this->detectCpuFreqSource();
 
+    // Without cpufreq (fixed-clock BIOS setups) the only source is /proc/cpuinfo,
+    // which the kernel has to format for every core on each read. The value barely
+    // moves there, so read it every 5th sample only.
+    if (!this->m_cpuFreqUseSysfs && this->m_cpuinfoFreqSkip++ % 5 != 0)
+        return;
+
     if (this->m_cpuFreqUseSysfs)
     {
         for (int i = 0; i < static_cast<int>(this->m_cpuFreqFds.size()) && i < coreMhz.size(); ++i)

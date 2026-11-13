@@ -50,6 +50,7 @@ MemoryDetailWidget::MemoryDetailWidget(QWidget *parent) : QWidget(parent), ui(ne
     WidgetStyle::ApplyTextStyle(this->ui->timeLeftLabel, scheme->AxisLabelColor, 9);
     WidgetStyle::ApplyTextStyle(this->ui->timeRightLabel, scheme->AxisLabelColor, 9);
     WidgetStyle::ApplyTextStyle(this->ui->compositionLabel, scheme->StatLabelColor, 9);
+    UIHelper::SetElidedText(this->ui->compositionLabel, tr("Memory composition"));   // gives way to the legend in a narrow window
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedDot, scheme->MemoryLegendUsedColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendUsedLabel, scheme->MemoryLegendTextColor, 8);
     WidgetStyle::ApplyTextStyle(this->ui->legendCompressedDot, scheme->MemoryLegendCompressedColor, 8);
@@ -190,9 +191,14 @@ void MemoryDetailWidget::onUpdated()
     this->ui->statDirtyValue->setText(Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, dirty)), 1));
     if (hasCompressedMemory)
     {
-        this->ui->statCompressedValue->setText(tr("%1 (using %2 RAM)")
-                                                   .arg(Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, compressedData)), 1),
-                                                        Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, compressedRam)), 1)));
+        const QString full = tr("%1 (using %2 RAM)")
+                                 .arg(Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, compressedData)), 1),
+                                      Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, compressedRam)), 1));
+        // In a narrow window only the amount; the long form would push the table
+        // beside it out of the page. The full text stays in the tooltip.
+        const bool narrow = this->width() < 640;
+        this->ui->statCompressedValue->setText(narrow ? Misc::FormatKiB(static_cast<quint64>(qMax<qint64>(0, compressedData)), 1) : full);
+        this->ui->statCompressedValue->setToolTip(narrow ? full : QString());
     } else
     {
         this->ui->statCompressedValue->setText(tr("—"));

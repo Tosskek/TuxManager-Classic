@@ -19,7 +19,11 @@
 #ifndef OS_PROCESSHELPER_H
 #define OS_PROCESSHELPER_H
 
+#include <QHash>
+#include <QList>
+#include <QSet>
 #include <QString>
+#include <QStringList>
 #include <sys/types.h>
 
 namespace OS
@@ -34,6 +38,39 @@ namespace OS
             /// Change the nice value of a process.
             /// Returns true on success, sets errorMsg on failure.
             static bool Renice(pid_t pid, int nice, QString &errorMsg);
+
+            //! A process to signal, pinned by PID + start time so a reused PID is never hit.
+            struct Target
+            {
+                pid_t   PID { 0 };
+                quint64 StartTimeTicks { 0 };   ///< 0 = unknown, the PID alone is trusted
+                uid_t   UID { 0 };
+                QString Name;
+            };
+
+            struct SignalResult
+            {
+                int         Sent { 0 };      ///< processes that got the signal
+                int         Gone { 0 };      ///< already exited (or the PID now belongs to another process)
+                int         Swept { 0 };     ///< extra processes found and included by KillGroup
+                QStringList Errors;          ///< real failures (permission, ...)
+            };
+
+            //! Start time (jiffies since boot) of a live process, 0 when it does not exist.
+            static quint64 StartTimeOf(pid_t pid);
+
+            //! Sends the signal to every target that is still the same process.
+            static SignalResult SendSignalChecked(const QList<Target> &targets, int signal);
+
+            /*!
+             * Kills a whole group so that a program that keeps starting copies of itself
+             * (fork bomb) cannot outrun it: everything is stopped first, then /proc is
+             * rescanned for children of stopped members and, for the names in
+             * \a sweepNames, for same-named processes of the same user that did not exist
+             * in \a knownPids (= appeared after the list was read). Repeats until nothing
+             * new shows up, then sends SIGKILL to all.
+             */
+            static SignalResult KillGroup(const QList<Target> &targets, const QSet<QString> &sweepNames, const QSet<pid_t> &knownPids);
 
             /// Human-readable description of a signal number.
             static QString GetSignalName(int signal);

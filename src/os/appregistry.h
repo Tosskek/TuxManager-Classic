@@ -71,6 +71,11 @@ namespace OS
             /// the cgroup is not an app unit or no desktop entry matches.
             bool AppInfoForCGroup(const QString &cgroup_path, QString *name, QString *icon);
 
+            /// Desktop-entry name and icon for a process, matched by its executable (exact
+            /// path, then the file name: the `steam` binary finds steam.desktop). Shells and
+            /// interpreters never match. Returns false when nothing matches.
+            bool AppInfoForProcess(const Process &proc, QString *name, QString *icon);
+
         private:
             struct DesktopEntry
             {
@@ -78,12 +83,14 @@ namespace OS
                 QString Name;
                 QString Icon;      ///< Icon= value verbatim: theme name or absolute path
                 QString ExecPath;  ///< Canonical path of the primary binary, empty when not resolvable
+                QString ScriptPath; ///< Canonical script path when Exec is "<interpreter> /path/script"; else empty
             };
 
             bool                                  m_indexed { false };
             QHash<QString, DesktopEntry>          m_byId;
             QHash<QString, QString>               m_byExec;    ///< Canonical exec path to desktop id; empty id marks an ambiguous binary
             QHash<QString, QString>               m_byExecBasename;
+            QHash<QString, QString>               m_byScript;  ///< Canonical script path to desktop id (python/bash apps)
             QHash<QString, QString>               m_bySnap;    ///< Snap package name to desktop id
             QHash<Process::Identity, QString>     m_resolved;  ///< Own-match result per process, empty string when nothing matched
             QHash<QString, QIcon>                 m_icons;

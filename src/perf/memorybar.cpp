@@ -50,7 +50,9 @@ void MemoryBar::paintEvent(QPaintEvent * /*event*/)
 {
     const ColorScheme *scheme = ColorScheme::GetCurrent();
     QPainter p(this);
-    const QRect r = this->rect().adjusted(0, 0, -1, -1);   // leave 1px for border
+    // Fill the whole widget; the frame is drawn over the outermost device pixel.
+    // (Leaving one logical pixel free showed a background line inside the frame at 200 %.)
+    const QRect r = this->rect();
     int wUsed = 0, wCompressed = 0, wDirty = 0, wCached = 0, wFree = 0;
     this->segmentWidths(r, wUsed, wCompressed, wDirty, wCached, wFree);
 

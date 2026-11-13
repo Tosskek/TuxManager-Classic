@@ -17,6 +17,7 @@
  */
 
 #include "nvmlbackend.h"
+#include <atomic>
 #include "../../logger.h"
 #include "../../misc.h"
 
@@ -134,7 +135,7 @@ namespace
     // cost). Its values are only shown on the GPU detail page, so while that page is
     // hidden it is read on every 5th sample; the counters are cumulative, so the rate
     // is then the exact average over those samples.
-    bool g_detailPageVisible = false;
+    std::atomic<bool> g_detailPageVisible { false };   // set by the GUI thread, read by the sampling thread
     unsigned int g_pcieSampleCounter = 0;
     static constexpr unsigned int kHiddenPcieEvery = 5;
     QHash<NvmlDevice, std::pair<double, double>> g_lastPcieRates;   // device -> (tx, rx) bytes/s
@@ -351,11 +352,46 @@ void GpuNvmlBackend::Detect()
 bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
 {
     if (!this->m_available || !pNvmlDeviceGetCountV2 || !pNvmlDeviceGetHandleByIndexV2)
+    {
+        // The driver was there and went away (module reload, driver update, GPU reset):
+        // look for it again now and then instead of staying dead until restart.
+        if (this->m_lost && ++this->m_retryCountdown >= 10)
+        {
+            this->m_retryCountdown = 0;
+            this->Detect();
+            if (this->m_available)
+            {
+                this->m_lost = false;
+                this->m_failures = 0;
+                LOG_INFO("NVIDIA driver is back; GPU monitoring resumed");
+            }
+        }
         return false;
+    }
 
     unsigned int count = 0;
     if (pNvmlDeviceGetCountV2(&count) != NVML_SUCCESS)
+    {
+        if (++this->m_failures >= 5)
+        {
+            LOG_WARN("NVIDIA driver stopped answering; will keep trying to reconnect");
+            this->unload();
+            this->m_lost = true;
+            this->m_retryCountdown = 0;
+            for (auto &gpu : gpus)
+            {
+                if (gpu->Backend.contains(QLatin1String("NVML"), Qt::CaseInsensitive) || gpu->Backend.isEmpty())
+                {
+                    gpu->UtilPct = 0.0;
+                    gpu->TemperatureC = -1;
+                    gpu->PowerUsageW = -1.0;
+                    gpu->CoreClockMHz = -1;
+                }
+            }
+        }
         return false;
+    }
+    this->m_failures = 0;
 
     char driverVer[96] = {};
     if (pNvmlSystemGetDriverVersion)
@@ -376,13 +412,21 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
 
         char nameBuf[128] = {};
         char uuidBuf[96] = {};
-        pNvmlDeviceGetName(dev, nameBuf, sizeof(nameBuf));
-        pNvmlDeviceGetUUID(dev, uuidBuf, sizeof(uuidBuf));
-
-        const QString name = QString::fromLatin1(nameBuf).trimmed();
-        QString id = QString::fromLatin1(uuidBuf).trimmed();
-        if (id.isEmpty())
-            id = QString("gpu-%1").arg(i);
+        // Name and UUID never change for a device handle; ask once. (A UUID call that
+        // failed once used to create a second, phantom GPU under a made-up id.)
+        static QHash<NvmlDevice, QPair<QString, QString>> identity;
+        auto known = identity.constFind(dev);
+        if (known == identity.cend())
+        {
+            const bool nameOk = pNvmlDeviceGetName(dev, nameBuf, sizeof(nameBuf)) == NVML_SUCCESS;
+            const bool uuidOk = pNvmlDeviceGetUUID(dev, uuidBuf, sizeof(uuidBuf)) == NVML_SUCCESS;
+            const QString uuid = QString::fromLatin1(uuidBuf).trimmed();
+            if (!nameOk || !uuidOk || uuid.isEmpty())
+                continue;   // try again at the next sample
+            known = identity.insert(dev, { QString::fromLatin1(nameBuf).trimmed(), uuid });
+        }
+        const QString name = known->first;
+        const QString id = known->second;
 
         NvmlUtilization util{};
         NvmlMemory mem{};
@@ -408,8 +452,12 @@ bool GpuNvmlBackend::Sample(std::vector<std::unique_ptr<GPU::GPUInfo>> &gpus)
                 // Two samples a few milliseconds apart (e.g. right after start-up) would
                 // turn a single burst into an absurd rate: wait for a longer interval.
                 static constexpr long long kMinIntervalUs = 50000;
-                if (!prev.valid)
+                const bool wentBack = !now.is32Bit && (now.tx < prev.tx || now.rx < prev.rx);
+                if (!prev.valid || dtUs <= 0 || wentBack)
                 {
+                    // First reading, the clock was set back, or the counters restarted
+                    // (GPU / driver reset): start over instead of showing an absurd spike
+                    // or staying at zero.
                     prev = now;
                 } else if (dtUs >= kMinIntervalUs)
                 {

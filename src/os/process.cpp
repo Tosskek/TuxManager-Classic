@@ -387,6 +387,10 @@ void Process::loadUserAndCmdline(int dirFd, Process &proc)
             if (n <= 0)
                 break;
             data.append(chunk, static_cast<int>(n));
+            // Enough to identify anything. A linker or xargs run can carry megabytes of
+            // arguments, which would then be copied, searched and sorted on every refresh.
+            if (data.size() >= 8192)
+                break;
         }
         ::close(fd);
     }

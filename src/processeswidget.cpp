@@ -19,6 +19,11 @@
 #include "processeswidget.h"
 #include "ui/classictheme.h"
 #include "os/processhelper.h"
+#include "os/selfpriority.h"
+#include "mainwindow.h"
+#ifdef TM_MODEL_TEST
+#include <QAbstractItemModelTester>
+#endif
 #include "configuration.h"
 #include "globals.h"
 #include "logger.h"
@@ -82,6 +87,20 @@ ProcessesWidget::ProcessesWidget(OS::ProcessRefreshService *processRefreshServic
             this->m_treeDefaultExpansionDone = false;
             this->applyDefaultTreeExpansion();   // back to: Apps open, the rest closed
         }
+    });
+    // A match that turns up later (a program started while the search is active)
+    // arrives as new, collapsed rows: open them too. Merged into one pass per refresh.
+    connect(this->m_treeProxy, &QAbstractItemModel::rowsInserted, this, [this]()
+    {
+        if (this->ui->searchEdit->text().isEmpty() || this->m_searchExpandQueued)
+            return;
+        this->m_searchExpandQueued = true;
+        QTimer::singleShot(0, this, [this]()
+        {
+            this->m_searchExpandQueued = false;
+            if (!this->ui->searchEdit->text().isEmpty() && this->m_treeView)
+                this->m_treeView->expandAll();
+        });
     });
     connect(this->ui->runNewTaskButton, &QPushButton::clicked, this, &ProcessesWidget::runNewTask);
     connect(this->ui->openTerminalButton, &QPushButton::clicked, this, &ProcessesWidget::openTerminal);
@@ -204,6 +223,10 @@ void ProcessesWidget::setupTable()
     if (resetProcessHeaderState && CFG->ProcessListSortColumn > OS::ProcessModel::ColMemVirt)
         CFG->ProcessListSortColumn += 3;
 
+#ifdef TM_MODEL_TEST
+    new QAbstractItemModelTester(this->m_treeModel, QAbstractItemModelTester::FailureReportingMode::Fatal, this);
+    new QAbstractItemModelTester(this->m_model, QAbstractItemModelTester::FailureReportingMode::Fatal, this);
+#endif
     this->m_proxy->setSourceModel(this->m_model);
     this->m_treeProxy->setSourceModel(this->m_treeModel);
     this->m_treeProxy->setSortRole(Qt::UserRole);
@@ -447,6 +470,7 @@ void ProcessesWidget::setupTable()
         CFG->ProcessTreeView = true;
     }
     this->syncAllProcessColumnVisibility();
+    this->updateStretchColumns();
     this->m_treeHeaderPersistenceEnabled = true;
     if (savedProcessColumnSchemaVersion < PROCESS_COLUMN_SCHEMA_VERSION)
     {
@@ -477,8 +501,6 @@ void ProcessesWidget::setTreeViewMode(bool enabled)
     if (enabled)
     {
         this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot.isEmpty() ? this->m_model->GetProcesses() : this->m_lastProcessSnapshot);
-        if (this->m_treeModel->rowCount() > 0)
-            this->m_treeView->resizeColumnToContents(OS::ProcessTreeModel::ColName);
         this->applyDefaultTreeExpansion();
     } else if (!this->m_lastProcessSnapshot.isEmpty())
     {
@@ -543,9 +565,15 @@ void ProcessesWidget::startRefresh()
     if (this->m_refreshInFlight)
     {
         this->m_refreshPending = true;
+        // The reader normally answers in milliseconds. When it does not (the kernel is
+        // not handing out process data: out of memory, a hung mount...), say so
+        // instead of silently showing an old list.
+        if (this->m_refreshClock.isValid() && this->m_refreshClock.elapsed() > 5000)
+            this->ui->statusLabel->setText(tr("The system is not answering - this list is %1 s old").arg(this->m_refreshClock.elapsed() / 1000));
         return;
     }
 
+    this->m_refreshClock.start();
     this->m_refreshInFlight = true;
     this->m_refreshPending = false;
     ++this->m_refreshToken;
@@ -623,6 +651,8 @@ void ProcessesWidget::onRefreshFinished(int consumer, quint64 token, const QList
     {
         // The flat table is hidden in tree mode, so it is not updated here (it is
         // refilled from m_lastProcessSnapshot when switching back to table mode).
+        this->m_windowPids.Refresh();
+        this->m_treeModel->SetWindowPids(this->m_windowPids.Pids(), this->m_windowPids.IsAvailable());
         if (this->m_treeModel->SetProcesses(this->m_lastProcessSnapshot))
             this->restoreTreeStateDeferred(expandedPids, treeSelection, treeCurrentPid, treeScroll);
         this->applyDefaultTreeExpansion();
@@ -677,8 +707,25 @@ void ProcessesWidget::showHeaderContextMenu(QHeaderView *header, int columnCount
     if (!chosen)
         return;
 
+    // Only the column check boxes; the shared menu items below them handle themselves
+    // (they used to fall through here as "column 0" and hide it).
+    if (!chosen->isCheckable() || !chosen->data().isValid())
+        return;
     const int col = chosen->data().toInt();
+    if (col < 0 || col >= columnCount)
+        return;
+    if (!chosen->isChecked())
+    {
+        // Keep Name, and at least one column: with none left there is no header to
+        // right-click to get them back.
+        int visible = 0;
+        for (int c = 0; c < columnCount; ++c)
+            visible += header->isSectionHidden(c) ? 0 : 1;
+        if (col == OS::ProcessModel::ColName || visible <= 1)
+            return;
+    }
     this->syncProcessColumnVisibility(col, !chosen->isChecked());
+    this->updateStretchColumns();
     this->saveTableHeaderState();
     this->saveTreeHeaderState();
     this->updateIOMetricsEnabledState();
@@ -690,7 +737,10 @@ void ProcessesWidget::saveTableHeaderState() const
         return;
 
     if (QHeaderView *header = this->ui->tableView ? this->ui->tableView->horizontalHeader() : nullptr)
+    {
         CFG->ProcessListHeaderState = header->saveState();
+        MainWindow::ScheduleSave();
+    }
 }
 
 void ProcessesWidget::saveTreeHeaderState() const
@@ -699,7 +749,10 @@ void ProcessesWidget::saveTreeHeaderState() const
         return;
 
     if (this->m_treeView && this->m_treeView->header())
+    {
         CFG->ProcessTreeHeaderState = this->m_treeView->header()->saveState();
+        MainWindow::ScheduleSave();
+    }
 }
 
 void ProcessesWidget::syncProcessColumnVisibility(int column, bool hidden)
@@ -711,6 +764,24 @@ void ProcessesWidget::syncProcessColumnVisibility(int column, bool hidden)
         tableHeader->setSectionHidden(column, hidden);
     if (this->m_treeView)
         this->m_treeView->setColumnHidden(column, hidden);
+}
+
+void ProcessesWidget::updateStretchColumns()
+{
+    // The Name column takes whatever width the other columns leave, so the list
+    // always fills the window and follows it when it is resized. When the command
+    // line column is shown, that one stretches instead and Name keeps its width.
+    const auto apply = [](QHeaderView *header)
+    {
+        if (!header)
+            return;
+        const bool cmdlineShown = !header->isSectionHidden(OS::ProcessModel::ColCmdline);
+        header->setStretchLastSection(false);
+        header->setSectionResizeMode(OS::ProcessModel::ColCmdline, QHeaderView::Stretch);
+        header->setSectionResizeMode(OS::ProcessModel::ColName, cmdlineShown ? QHeaderView::Interactive : QHeaderView::Stretch);
+    };
+    apply(this->ui->tableView ? this->ui->tableView->horizontalHeader() : nullptr);
+    apply(this->m_treeView ? this->m_treeView->header() : nullptr);
 }
 
 void ProcessesWidget::syncAllProcessColumnVisibility()
@@ -1071,7 +1142,7 @@ void ProcessesWidget::openTerminal()
         return;
     }
 
-    if (!QProcess::startDetached(terminal, {}))
+    if (!OS::StartDetachedNormalPriority(terminal, {}))
     {
         QMessageBox::warning(this, tr("Open terminal failed"), tr("Failed to start terminal: %1").arg(terminal));
         return;
@@ -1167,8 +1238,8 @@ void ProcessesWidget::ensureNameColumnFits()
     // program names are not cut off. Measured by hand: the view's own measurement
     // ignores the bold section font.
     QHeaderView *header = this->m_treeView ? this->m_treeView->header() : nullptr;
-    if (!header)
-        return;
+    if (!header || header->sectionResizeMode(OS::ProcessTreeModel::ColName) == QHeaderView::Stretch)
+        return; // the column fills the window by itself
     const QFont base = this->m_treeView->font();
     QFont bold = base;
     bold.setBold(true);
@@ -1274,13 +1345,39 @@ QList<pid_t> ProcessesWidget::selectedPids() const
     {
         const QModelIndexList rows = this->m_treeView->selectionModel()->selectedRows(OS::ProcessTreeModel::ColPid);
         pids.reserve(rows.size());
+        QSet<pid_t> seen;
+        const bool searching = !this->ui->searchEdit->text().isEmpty();
         for (const QModelIndex &proxyIdx : rows)
         {
             // A group row stands for all of its members (End task ends them all).
-            for (pid_t pid : this->m_treeModel->PidsForIndex(this->m_treeProxy->mapToSource(proxyIdx)))
+            // While a search is active only for the members that are shown: a row
+            // "bash (20)" with one match under it must not take the other 19 along.
+            QList<pid_t> members;
+            if (searching && this->m_treeProxy->rowCount(proxyIdx.siblingAtColumn(0)) > 0)
             {
-                if (pid > 0 && !pids.contains(pid))
+                std::function<void(const QModelIndex &)> collect = [&](const QModelIndex &parent)
+                {
+                    for (int r = 0; r < this->m_treeProxy->rowCount(parent); ++r)
+                    {
+                        const QModelIndex child = this->m_treeProxy->index(r, 0, parent);
+                        if (this->m_treeProxy->rowCount(child) > 0)
+                            collect(child);
+                        else
+                            members.append(this->m_treeModel->PidsForIndex(this->m_treeProxy->mapToSource(child)));
+                    }
+                };
+                collect(proxyIdx.siblingAtColumn(0));
+            } else
+            {
+                members = this->m_treeModel->PidsForIndex(this->m_treeProxy->mapToSource(proxyIdx));
+            }
+            for (pid_t pid : std::as_const(members))
+            {
+                if (pid > 0 && !seen.contains(pid))
+                {
+                    seen.insert(pid);
                     pids.append(pid);
+                }
             }
         }
     }
@@ -1312,88 +1409,142 @@ QList<OS::Process> ProcessesWidget::selectedProcesses() const
     return selected;
 }
 
+bool ProcessesWidget::selectionHasGroupRow() const
+{
+    if (!this->m_treeViewMode || !this->m_treeView || !this->m_treeView->selectionModel())
+        return false;
+    const QModelIndexList rows = this->m_treeView->selectionModel()->selectedRows(OS::ProcessTreeModel::ColPid);
+    for (const QModelIndex &proxyIdx : rows)
+    {
+        if (this->m_treeModel->rowCount(this->m_treeProxy->mapToSource(proxyIdx).siblingAtColumn(0)) > 0)
+            return true;
+    }
+    return false;
+}
+
 void ProcessesWidget::sendSignalToSelected(int signal)
 {
-    const QList<pid_t> pids = this->selectedPids();
-    if (pids.isEmpty())
-        return;
     const QList<OS::Process> selected = this->selectedProcesses();
+    if (selected.isEmpty())
+        return;
+    const bool groupSelected = this->selectionHasGroupRow();
 
-    QStringList pidStrings;
-    pidStrings.reserve(pids.size());
-    for (pid_t pid : pids)
-        pidStrings << QString::number(pid);
+    // Pin every target by PID + start time: the confirmation can stay open for a
+    // long time and a PID may be reused meanwhile.
+    QList<OS::ProcessHelper::Target> targets;
+    targets.reserve(selected.size());
+    QHash<QString, int> nameCounts;
+    QStringList nameOrder;
+    QStringList otherUsers;
+    bool hitsSelf = false, hitsSession = false;
+    static const QSet<QString> sessionCritical {
+        "Xorg", "X", "Xwayland", "xfce4-session", "lightdm", "gdm", "sddm", "dbus-daemon", "dbus-broker",
+        "gnome-shell", "gnome-session-b", "kwin_wayland", "sway", "Hyprland", "systemd", "systemd-logind"
+    };
+    const pid_t self = ::getpid();
+    for (const OS::Process &proc : selected)
+    {
+        OS::ProcessHelper::Target t;
+        t.PID = proc.PID;
+        t.StartTimeTicks = proc.StartTimeTicks;
+        t.UID = proc.UID;
+        t.Name = proc.Name;
+        targets.append(t);
+        if (++nameCounts[proc.Name] == 1)
+            nameOrder.append(proc.Name);
+        if (proc.PID == self)
+            hitsSelf = true;
+        if (proc.PID == 1 || sessionCritical.contains(proc.Name))
+            hitsSession = true;
+        if (!CFG->IsSuperuser && proc.UID != CFG->EUID && !proc.User.isEmpty() && !otherUsers.contains(proc.User))
+            otherUsers.append(proc.User);
+    }
 
     const QString signalLabel = OS::ProcessHelper::GetSignalName(signal);
     const QString signalText = signalLabel.isEmpty() ? QString::number(signal) : signalLabel;
 
     QString body;
-    if (pids.size() == 1)
+    if (targets.size() == 1)
     {
-        body = tr("You are about to send signal %1 to process PID %2.\n\n"
-                  "Do you want to continue?")
-                   .arg(signalText, pidStrings.first());
+        body = tr("Send %1 to \"%2\" (PID %3)?").arg(signalText, targets.first().Name).arg(targets.first().PID);
     } else
     {
-        body = tr("You are about to send signal %1 to %2 selected processes.\n"
-                  "This will affect all selected processes.\n\n"
-                  "PIDs: %3\n\n"
-                  "Do you want to continue?")
-                   .arg(signalText, QString::number(pids.size()), pidStrings.join(", "));
-    }
-
-    if (!CFG->IsSuperuser)
-    {
-        bool targetsOtherUser = false;
-        QStringList otherUsers;
-        for (const OS::Process &proc : selected)
+        // Names with counts, largest first; never a wall of PIDs.
+        std::sort(nameOrder.begin(), nameOrder.end(), [&nameCounts](const QString &l, const QString &r)
         {
-            if (proc.UID == CFG->EUID)
-                continue;
-            targetsOtherUser = true;
-            if (!proc.User.isEmpty() && !otherUsers.contains(proc.User))
-                otherUsers.append(proc.User);
-        }
-
-        if (targetsOtherUser)
+            return nameCounts.value(l) > nameCounts.value(r);
+        });
+        QStringList parts;
+        for (int i = 0; i < nameOrder.size() && i < 8; ++i)
         {
-            const QString userHint = otherUsers.isEmpty()
-                                     ? QString()
-                                     : tr("\nTarget owners: %1").arg(otherUsers.join(", "));
-            body += tr("\n\nWarning: one or more selected processes are owned by another user. "
-                       "This application is running without superuser privileges, so this signal will most likely be rejected and nothing will happen.")
-                    + userHint;
+            const int n = nameCounts.value(nameOrder.at(i));
+            parts << (n > 1 ? QString("%1 × %2").arg(nameOrder.at(i)).arg(n) : nameOrder.at(i));
         }
+        if (nameOrder.size() > 8)
+            parts << tr("and %1 more programs").arg(nameOrder.size() - 8);
+        body = tr("Send %1 to %2 processes?\n\n%3").arg(signalText).arg(targets.size()).arg(parts.join(", "));
     }
+    if (groupSelected && !this->ui->searchEdit->text().isEmpty())
+        body += tr("\n\nOnly the processes shown by the current search are included.");
+    if (hitsSession)
+        body += tr("\n\nWarning: this includes a part of the desktop session or the system itself. "
+                   "Ending it can close every open program and log you out.");
+    if (hitsSelf)
+        body += tr("\n\nThis includes Task Manager itself.");
+    if (!otherUsers.isEmpty())
+        body += tr("\n\nSome of these belong to another user (%1). Without superuser rights the signal will most likely be rejected.")
+                    .arg(otherUsers.join(", "));
 
     const QMessageBox::StandardButton answer = QMessageBox::warning(this, tr("Confirm Signal"), body, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (answer != QMessageBox::Yes)
         return;
 
-    QStringList errors;
-    for (pid_t pid : pids)
+    OS::ProcessHelper::SignalResult result;
+    if (signal == SIGKILL && groupSelected)
     {
-        QString err;
-        if (!OS::ProcessHelper::SendSignal(pid, signal, err))
+        // Whole group: also catch what it starts while we work (fork bombs). The
+        // "same name, appeared just now" rule is only used for names that are
+        // already there in large numbers.
+        QSet<QString> sweepNames;
+        for (auto it = nameCounts.cbegin(); it != nameCounts.cend(); ++it)
         {
-            LOG_WARN(err);
-            errors << err;
-        } else
-        {
-            LOG_INFO(QString("Sent %1 to PID %2").arg(OS::ProcessHelper::GetSignalName(signal)).arg(pid));
+            if (it.value() >= 50)
+                sweepNames.insert(it.key());
         }
-    }
-
-    if (!errors.isEmpty())
+        QSet<pid_t> known;
+        known.reserve(this->m_lastProcessSnapshot.size());
+        for (const OS::Process &proc : std::as_const(this->m_lastProcessSnapshot))
+            known.insert(proc.PID);
+        // Task Manager itself goes last (KillGroup skips it), so the rest is done first.
+        result = OS::ProcessHelper::KillGroup(targets, sweepNames, known);
+        if (hitsSelf)
+            ::kill(self, SIGKILL);
+    } else
     {
-        QMessageBox::warning(this, tr("Signal failed"), errors.join('\n'));
+        // Our own process last, or the others would never get their signal.
+        QList<OS::ProcessHelper::Target> ordered;
+        ordered.reserve(targets.size());
+        for (const OS::ProcessHelper::Target &t : std::as_const(targets))
+            if (t.PID != self)
+                ordered.append(t);
+        result = OS::ProcessHelper::SendSignalChecked(ordered, signal);
+        if (hitsSelf)
+            ::kill(self, signal);
     }
+    LOG_INFO(QString("%1: sent to %2, already gone %3, extra found %4, failed %5")
+                 .arg(signalText).arg(result.Sent).arg(result.Gone).arg(result.Swept).arg(result.Errors.size()));
+
+    // Show the result right away instead of at the next tick.
+    this->startRefresh();
+
+    if (!result.Errors.isEmpty())
+        QMessageBox::warning(this, tr("Signal failed"), result.Errors.join('\n'));
 }
 
 void ProcessesWidget::reniceSelected()
 {
-    const QList<pid_t> pids = this->selectedPids();
-    if (pids.isEmpty())
+    const QList<OS::Process> selected = this->selectedProcesses();
+    if (selected.isEmpty())
         return;
 
     bool ok;
@@ -1402,16 +1553,20 @@ void ProcessesWidget::reniceSelected()
         return;
 
     QStringList errors;
-    for (pid_t pid : pids)
+    for (const OS::Process &proc : selected)
     {
+        // Skip a PID that now belongs to another process.
+        if (proc.StartTimeTicks != 0 && OS::ProcessHelper::StartTimeOf(proc.PID) != proc.StartTimeTicks)
+            continue;
         QString err;
-        if (!OS::ProcessHelper::Renice(pid, nice, err))
+        if (!OS::ProcessHelper::Renice(proc.PID, nice, err))
         {
             LOG_WARN(err);
-            errors << err;
+            if (errors.size() < 12)
+                errors << err;
         } else
         {
-            LOG_INFO(QString("Reniced PID %1 to nice=%2").arg(pid).arg(nice));
+            LOG_INFO(QString("Reniced PID %1 to nice=%2").arg(proc.PID).arg(nice));
         }
     }
 
@@ -1449,7 +1604,25 @@ QString ProcessesWidget::findTerminalExecutable()
         "/nix/store/"
     };
 
-    for (const QString &candidate : terminalCandidates)
+    // The desktop's own terminal first: x-terminal-emulator is one system-wide choice
+    // (e.g. Konsole), which is the wrong one when the same machine also runs XFCE.
+    QStringList candidates;
+    const QString desktop = qEnvironmentVariable("XDG_CURRENT_DESKTOP").toUpper();
+    if (desktop.contains(QLatin1String("XFCE")))
+        candidates << "xfce4-terminal";
+    else if (desktop.contains(QLatin1String("KDE")))
+        candidates << "konsole";
+    else if (desktop.contains(QLatin1String("GNOME")))
+        candidates << "kgx" << "gnome-terminal";
+    else if (desktop.contains(QLatin1String("MATE")))
+        candidates << "mate-terminal";
+    else if (desktop.contains(QLatin1String("LXQT")))
+        candidates << "qterminal";
+    else if (desktop.contains(QLatin1String("LXDE")))
+        candidates << "lxterminal";
+    candidates << terminalCandidates;
+
+    for (const QString &candidate : std::as_const(candidates))
     {
         const QString exe = QStandardPaths::findExecutable(candidate);
         if (!exe.isEmpty())

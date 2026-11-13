@@ -215,8 +215,9 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Data
     ////////////////////////////////////////////////////////////////////////////////////////////////////
-    if (!this->m_data || this->m_data->IsEmpty())
-        return;
+    // An empty graph still gets its frame and overlay text below.
+    if (this->m_data && !this->m_data->IsEmpty())
+    {
 
     // Keep a fixed-width time axis:
     // - when history is short, right-align it (empty area on the left)
@@ -330,6 +331,7 @@ void GraphWidget::paintEvent(QPaintEvent * /*event*/)
             p.restore();
             clipLeft = clipRight;
         }
+    }
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////

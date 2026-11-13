@@ -10,6 +10,7 @@
  */
 
 #include "classictheme.h"
+#include "os/selfpriority.h"
 
 #include <QAction>
 #include <QApplication>
@@ -324,7 +325,7 @@ void ClassicTheme::SwitchAndRestart(bool dark)
         // Without --replace the new process would just close this one (toggle).
         if (!args.contains("--replace"))
             args << "--replace";
-        QProcess::startDetached(QCoreApplication::applicationFilePath(), args);
+        OS::StartDetachedNormalPriority(QCoreApplication::applicationFilePath(), args);
         const QList<QWidget *> windows = QApplication::topLevelWidgets();
         for (QWidget *w : windows)
         {

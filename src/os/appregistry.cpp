@@ -374,11 +374,59 @@ void AppRegistry::Invalidate()
     this->m_byId.clear();
     this->m_byExec.clear();
     this->m_byExecBasename.clear();
+    this->m_byScript.clear();
     this->m_bySnap.clear();
     this->m_resolved.clear();
     this->m_icons.clear();
     this->m_themeIconNames.clear();
     this->m_themeIndexComplete = false;
+}
+
+bool AppRegistry::AppInfoForProcess(const Process &proc, QString *name, QString *icon)
+{
+    if (proc.IsKernelThread)
+        return false;
+    this->ensureIndexed();
+    static const QSet<QString> generic = {
+        "sh", "bash", "dash", "zsh", "fish", "env", "python", "python3", "perl", "ruby", "node", "java",
+        "wine", "wine64", "wine64-preloader", "wineserver", "bwrap", "flatpak", "sudo", "su", "nice", "timeout" };
+
+    QString id;
+    const QString exe = readExePath(proc.PID);
+    if (!exe.isEmpty())
+        id = this->m_byExec.value(canonicalExecutable(exe));
+    if (id.isEmpty() && !this->m_byScript.isEmpty())
+    {
+        // Script apps ("python3 /path/run.py"): the first path argument is the script.
+        const QStringList args = proc.CmdLine.split(' ', Qt::SkipEmptyParts);
+        for (int i = 1; i < qMin<qsizetype>(args.size(), 4); ++i)
+        {
+            if (args.at(i).startsWith('-'))
+                continue;
+            if (args.at(i).startsWith('/'))
+                id = this->m_byScript.value(QFileInfo(args.at(i)).canonicalFilePath());
+            break;
+        }
+    }
+    if (id.isEmpty())
+    {
+        QString base = exe.isEmpty() ? proc.Name : QFileInfo(exe).fileName();
+        if (generic.contains(base) || base.startsWith(QLatin1String("python")))
+            return false;
+        id = this->m_byExecBasename.value(base);
+        if (id.isEmpty() && this->m_byId.contains(base))
+            id = base;
+    }
+    if (id.isEmpty())
+        return false;
+    const auto it = this->m_byId.constFind(id);
+    if (it == this->m_byId.cend() || it.value().Name.isEmpty())
+        return false;
+    if (name)
+        *name = it.value().Name;
+    if (icon)
+        *icon = it.value().Icon;
+    return true;
 }
 
 bool AppRegistry::AppInfoForCGroup(const QString &cgroup_path, QString *name, QString *icon)
@@ -532,6 +580,8 @@ void AppRegistry::indexDirectory(const QString &dir)
                 this->m_bySnap.insert(snap_name, entry.Id);
         }
 
+        if (!entry.ScriptPath.isEmpty() && !this->m_byScript.contains(entry.ScriptPath))
+            this->m_byScript.insert(entry.ScriptPath, entry.Id);
         if (entry.ExecPath.isEmpty())
             continue;
 
@@ -691,6 +741,30 @@ bool AppRegistry::parseDesktopFile(const QString &path, DesktopEntry &out) const
         return false;
 
     out.ExecPath = this->resolveExec(exec);
+    if (out.ExecPath.isEmpty())
+    {
+        // "python3 /path/app.py": remember the script, so the running interpreter can be
+        // matched to this entry by its command line.
+        const QStringList tokens = tokenizeExec(exec);
+        if (tokens.size() >= 2)
+        {
+            const QString first = QFileInfo(tokens.first()).fileName();
+            if (interpreters().contains(first) || first.startsWith(QLatin1String("python")))
+            {
+                for (int i = 1; i < tokens.size(); ++i)
+                {
+                    if (tokens.at(i).startsWith('-') || tokens.at(i).startsWith('%'))
+                        continue;
+                    if (tokens.at(i).startsWith('/'))
+                        out.ScriptPath = QFileInfo(tokens.at(i)).canonicalFilePath();
+                    break;
+                }
+            }
+        }
+    } else if (QFileInfo(out.ExecPath).suffix() == QLatin1String("py") || QFileInfo(out.ExecPath).suffix() == QLatin1String("sh"))
+    {
+        out.ScriptPath = out.ExecPath;   // executable script: runs as "python3 /path/script.py"
+    }
     return true;
 }
 

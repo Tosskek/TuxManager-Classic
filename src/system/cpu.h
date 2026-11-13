@@ -76,6 +76,7 @@ class CPU
         void readCpuMetadata();
         void detectCpuFreqSource();
         void readCurrentFreq();
+        unsigned m_cpuinfoFreqSkip { 0 };
         bool m_freqSamplingEnabled { true };
         void detectCpuTemperatureSensor();
         void sampleCpuTemperature();
